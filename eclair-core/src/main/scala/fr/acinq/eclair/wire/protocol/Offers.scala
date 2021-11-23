@@ -73,9 +73,9 @@ object Offers {
 
   case class QuantityMax(max: Long) extends OfferTlv
 
-  case class NodeId(xonly: ByteVector32) extends OfferTlv with InvoiceTlv {
-    val nodeId1: PublicKey = PublicKey(2 +: xonly)
-    val nodeId2: PublicKey = PublicKey(3 +: xonly)
+  case class NodeId(xOnly: ByteVector32) extends OfferTlv with InvoiceTlv {
+    val nodeId1: PublicKey = PublicKey(2 +: xOnly)
+    val nodeId2: PublicKey = PublicKey(3 +: xOnly)
   }
 
   object NodeId {
@@ -153,7 +153,7 @@ object Offers {
     val quantityMin: Option[Long] = records.get[QuantityMin].map(_.min)
     val quantityMax: Option[Long] = records.get[QuantityMax].map(_.max)
 
-    val nodeIdXOnly: ByteVector32 = records.get[NodeId].get.xonly
+    val nodeId = records.get[NodeId].get
 
     val sendInvoice: Boolean = records.get[SendInvoice].nonEmpty
 
@@ -161,9 +161,8 @@ object Offers {
 
     val signature: Option[ByteVector64] = records.get[Signature].map(_.signature)
 
-    val contact: Seq[OnionMessages.Destination] =
-      records.get[Paths].flatMap(_.paths.headOption).map(OnionMessages.BlindedPath).map(Seq(_))
-        .getOrElse(Seq(PublicKey(2.toByte +: nodeIdXOnly), PublicKey(3.toByte +: nodeIdXOnly)).map(nodeId => OnionMessages.Recipient(nodeId, None, None)))
+    val contact: Either[BlindedRoute, (PublicKey, PublicKey)] =
+      records.get[Paths].flatMap(_.paths.headOption).map(Left(_)).getOrElse(Right(nodeId.nodeId1, nodeId.nodeId2))
 
     def sign(key: PrivateKey): Offer = {
       val sig = signSchnorr(Offer.signatureTag, rootHash(records, offerTlvCodec), key)
@@ -172,7 +171,7 @@ object Offers {
 
     def checkSignature(): Boolean = {
       signature match {
-        case Some(sig) => verifySchnorr(Offer.signatureTag, rootHash(removeSignature(records), offerTlvCodec), sig, nodeIdXOnly)
+        case Some(sig) => verifySchnorr(Offer.signatureTag, rootHash(removeSignature(records), offerTlvCodec), sig, nodeId.xOnly)
         case None => false
       }
     }

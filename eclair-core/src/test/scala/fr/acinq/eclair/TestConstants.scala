@@ -195,9 +195,10 @@ object TestConstants {
       blockchainWatchdogSources = blockchainWatchdogSources,
       onionMessageConfig = OnionMessageConfig(
         relayPolicy = RelayAll,
-        timeout = 1 minute
+        timeout = 1 minute,
+        maxAttempts = 2,
       ),
-      purgeInvoicesInterval = Some(24 hours),
+    purgeInvoicesInterval = Some(24 hours),
     )
 
     def channelParams: LocalParams = Peer.makeChannelParams(
@@ -333,7 +334,8 @@ object TestConstants {
       blockchainWatchdogSources = blockchainWatchdogSources,
       onionMessageConfig = OnionMessageConfig(
         relayPolicy = RelayAll,
-        timeout = 1 minute
+        timeout = 1 minute,
+        maxAttempts = 2,
       ),
       purgeInvoicesInterval = Some(24 hours)
     )

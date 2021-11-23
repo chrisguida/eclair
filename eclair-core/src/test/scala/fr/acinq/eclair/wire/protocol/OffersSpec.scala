@@ -53,7 +53,7 @@ class OffersSpec extends AnyFunSuite {
     assert(offer.amount.isEmpty)
     assert(offer.signature.isEmpty)
     assert(offer.description === "Offer by rusty's node")
-    assert(offer.nodeIdXOnly === nodeId)
+    assert(offer.nodeId.xOnly === nodeId)
   }
 
   test("basic signed offer") {
@@ -62,7 +62,7 @@ class OffersSpec extends AnyFunSuite {
     assert(signedOffer.checkSignature())
     assert(signedOffer.amount.isEmpty)
     assert(signedOffer.description === "Offer by rusty's node")
-    assert(signedOffer.nodeIdXOnly === nodeId)
+    assert(signedOffer.nodeId.xOnly === nodeId)
   }
 
   test("offer with amount and quantity") {
@@ -71,7 +71,7 @@ class OffersSpec extends AnyFunSuite {
     assert(offer.amount === Some(50 msat))
     assert(offer.signature.isEmpty)
     assert(offer.description === "50msat multi-quantity offer")
-    assert(offer.nodeIdXOnly === nodeId)
+    assert(offer.nodeId.xOnly === nodeId)
     assert(offer.issuer === Some("rustcorp.com.au"))
     assert(offer.quantityMin === Some(1))
   }
@@ -82,7 +82,7 @@ class OffersSpec extends AnyFunSuite {
     assert(signedOffer.checkSignature())
     assert(signedOffer.amount === Some(50 msat))
     assert(signedOffer.description === "50msat multi-quantity offer")
-    assert(signedOffer.nodeIdXOnly === nodeId)
+    assert(signedOffer.nodeId.xOnly === nodeId)
     assert(signedOffer.issuer === Some("rustcorp.com.au"))
     assert(signedOffer.quantityMin === Some(1))
   }

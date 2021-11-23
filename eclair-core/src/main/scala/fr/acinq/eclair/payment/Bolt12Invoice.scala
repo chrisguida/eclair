@@ -103,7 +103,7 @@ case class Bolt12Invoice(records: TlvStream[InvoiceTlv], nodeId_opt: Option[Publ
 
   // It is assumed that the request is valid for this offer.
   def isValidFor(offer: Offer, request: InvoiceRequest): Boolean = {
-    Offers.xOnlyPublicKey(nodeId) == offer.nodeIdXOnly &&
+    Offers.xOnlyPublicKey(nodeId) == offer.nodeId.xOnly &&
       checkSignature() &&
       offerId.contains(request.offerId) &&
       request.chain == chain &&
@@ -147,7 +147,7 @@ object Bolt12Invoice {
    * @param nodeKey  the key that was used to generate the offer, may be different from our public nodeId if we're hiding behind a blinded route
    * @param features invoice features
    */
-  def apply(offer: Offer, request: InvoiceRequest, preimage: ByteVector32, nodeKey: PrivateKey, features: Features[InvoiceFeature]): Bolt12Invoice = {
+  def apply(offer: Offer, request: InvoiceRequest, preimage: ByteVector32, nodeKey: PrivateKey, minFinalCltvExpiryDelta: CltvExpiryDelta, features: Features[InvoiceFeature]): Bolt12Invoice = {
     require(request.amount.nonEmpty || offer.amount.nonEmpty)
     val tlvs: Seq[InvoiceTlv] = Seq(
       Some(Chain(request.chain)),
@@ -163,7 +163,8 @@ object Bolt12Invoice {
       request.payerNote.map(PayerNote),
       request.replaceInvoice.map(ReplaceInvoice),
       offer.issuer.map(Issuer),
-      Some(FeaturesTlv(features.unscoped()))
+      Some(Cltv(minFinalCltvExpiryDelta)),
+      Some(FeaturesTlv(features.unscoped())),
     ).flatten
     val signature = signSchnorr(signatureTag("signature"), rootHash(TlvStream(tlvs), invoiceTlvCodec), nodeKey)
     Bolt12Invoice(TlvStream(tlvs :+ Signature(signature)), Some(nodeKey.publicKey))

@@ -27,9 +27,12 @@ import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.MessageRelay.RelayPolicy
 import fr.acinq.eclair.io.Peer.PeerInfoResponse
+import fr.acinq.eclair.message.Postman
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Router.RouterConf
-import fr.acinq.eclair.wire.protocol.OnionMessage
+import fr.acinq.eclair.wire.protocol.{MessageOnion, OnionMessage}
+
+import scala.concurrent.duration.DurationInt
 
 /**
  * Ties network connections to peers.
