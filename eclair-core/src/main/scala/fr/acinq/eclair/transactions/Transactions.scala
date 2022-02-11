@@ -118,10 +118,12 @@ object Transactions {
 
   sealed trait SignatureData
   case class DelayedTxSigData(publicKey: ExtendedPublicKey, remotePoint: PublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat) extends SignatureData
-  sealed trait AddSignatureData[+S <: SignatureData]
-  case object NoAddSignatureData extends AddSignatureData[Nothing]
+  sealed trait AddSignatureData
+  case object NoAddSignatureData extends AddSignatureData
+  case class HtlcSuccessSignatureData(remoteSig: ByteVector64, paymentPreimage: ByteVector32) extends AddSignatureData
+  case class ClaimHtlcSuccessAddSignatureData(paymentPreimage: ByteVector32) extends AddSignatureData
 
-  sealed trait Signable[+T <: TransactionWithInputInfo, D <: SignatureData, A <: AddSignatureData[SignatureData]] {
+  sealed trait Signable[+T <: TransactionWithInputInfo, D <: SignatureData, A <: AddSignatureData] {
     this: T =>
     def sign(keyManager: ChannelKeyManager, signData: D, addSigData: A): T
   }
@@ -149,12 +151,22 @@ object Transactions {
       }
     }
   }
-  case class HtlcSuccessTx(input: InputInfo, tx: Transaction, paymentHash: ByteVector32, htlcId: Long, confirmBefore: BlockHeight) extends HtlcTx
+  case class HtlcSuccessTx(input: InputInfo, tx: Transaction, paymentHash: ByteVector32, htlcId: Long, confirmBefore: BlockHeight) extends HtlcTx with Signable[HtlcSuccessTx, DelayedTxSigData, HtlcSuccessSignatureData]  {
+    override def sign(keyManager:  ChannelKeyManager, signData:  DelayedTxSigData, addSigData:  HtlcSuccessSignatureData): HtlcSuccessTx = {
+      val sig = keyManager.sign(this, signData.publicKey, signData.remotePoint, signData.txOwner, signData.commitmentFormat)
+      addSigs(this, sig, addSigData.remoteSig, addSigData.paymentPreimage, signData.commitmentFormat)
+    }
+  }
   case class HtlcTimeoutTx(input: InputInfo, tx: Transaction, htlcId: Long, confirmBefore: BlockHeight) extends HtlcTx
   case class HtlcDelayedTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
   sealed trait ClaimHtlcTx extends ReplaceableTransactionWithInputInfo { def htlcId: Long }
   case class LegacyClaimHtlcSuccessTx(input: InputInfo, tx: Transaction, htlcId: Long, confirmBefore: BlockHeight) extends ClaimHtlcTx
-  case class ClaimHtlcSuccessTx(input: InputInfo, tx: Transaction, paymentHash: ByteVector32, htlcId: Long, confirmBefore: BlockHeight) extends ClaimHtlcTx
+  case class ClaimHtlcSuccessTx(input: InputInfo, tx: Transaction, paymentHash: ByteVector32, htlcId: Long, confirmBefore: BlockHeight) extends ClaimHtlcTx with Signable[ClaimHtlcSuccessTx, DelayedTxSigData, ClaimHtlcSuccessAddSignatureData] {
+    override def sign(keyManager:  ChannelKeyManager, signData:  DelayedTxSigData, addSigData: ClaimHtlcSuccessAddSignatureData): ClaimHtlcSuccessTx = {
+      val sig = keyManager.sign(this, signData.publicKey, signData.remotePoint, signData.txOwner, signData.commitmentFormat)
+      addSigs(this, sig, addSigData.paymentPreimage)
+    }
+  }
   case class ClaimHtlcTimeoutTx(input: InputInfo, tx: Transaction, htlcId: Long, confirmBefore: BlockHeight) extends ClaimHtlcTx
   sealed trait ClaimAnchorOutputTx extends TransactionWithInputInfo
   case class ClaimLocalAnchorOutputTx(input: InputInfo, tx: Transaction, confirmBefore: BlockHeight) extends ClaimAnchorOutputTx with ReplaceableTransactionWithInputInfo

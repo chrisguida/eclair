@@ -772,24 +772,25 @@ object Helpers {
       val htlcTxs: Map[OutPoint, RemoteCommitPublished.HtlcOutputStatus] = remoteCommit.spec.htlcs.toList.collect {
         case OutgoingHtlc(add: UpdateAddHtlc) =>
           // NB: we first generate the tx skeleton and finalize it below if we have the preimage, so we set logSuccess to false to avoid logging twice
-          withTxGenerationLog(logSuccess = false) { // TODO: refactor this
+          withTxGenerationLog() {
             Transactions.makeClaimHtlcSuccessTx(remoteCommitTx.tx, outputs, commitments.localParams.dustLimit, localHtlcPubkey, remoteHtlcPubkey, remoteRevocationPubkey, commitments.localParams.defaultFinalScriptPubKey, add, feeratePerKwHtlc, commitments.commitmentFormat)
-          }.toOption.map(claimHtlcTx => {
-            if (preimages.contains(add.paymentHash)) {
-              // incoming htlc for which we have the preimage: we can spend it immediately
-              claimHtlcTx.input.outPoint -> withTxGenerationLog() {
-                val sig = keyManager.sign(claimHtlcTx, keyManager.htlcPoint(channelKeyPath), remoteCommit.remotePerCommitmentPoint, TxOwner.Local, commitments.commitmentFormat)
-                TxGenerationResult.Success(Transactions.addSigs(claimHtlcTx, sig, preimages(add.paymentHash)))
-              }.toOption.map(RemoteCommitPublished.HtlcOutputStatus.Spendable)
-            } else if (failedIncomingHtlcs.contains(claimHtlcTx.htlcId)) {
+              .map { claimHtlcTx =>
+                if (preimages.contains(add.paymentHash)) {
+                // incoming htlc for which we have the preimage: we can spend it immediately
+                  claimHtlcTx.input.outPoint -> RemoteCommitPublished.HtlcOutputStatus.Spendable(claimHtlcTx.sign(keyManager,
+                  signData = DelayedTxSigData(keyManager.htlcPoint(channelKeyPath), remoteCommit.remotePerCommitmentPoint, TxOwner.Local, commitments.commitmentFormat),
+                  addSigData = ClaimHtlcSuccessAddSignatureData(preimages(add.paymentHash))
+                ))
+            } else if (failedIncomingHtlcs.contains(add.id)) {
               // incoming htlc that we know for sure will never be fulfilled downstream: we can safely discard it
-              claimHtlcTx.input.outPoint -> Some(RemoteCommitPublished.HtlcOutputStatus.Unspendable)
+              claimHtlcTx.input.outPoint -> RemoteCommitPublished.HtlcOutputStatus.Unspendable
             } else {
               // incoming htlc for which we don't have the preimage: we can't spend it immediately, but we may learn the
               // preimage later, otherwise it will eventually timeout and they will get their funds back
-              claimHtlcTx.input.outPoint -> Some(RemoteCommitPublished.HtlcOutputStatus.Unknown)
+              claimHtlcTx.input.outPoint -> RemoteCommitPublished.HtlcOutputStatus.Unknown
             }
-          })
+          }
+          }
         case IncomingHtlc(add: UpdateAddHtlc) =>
           // outgoing htlc: they may or may not have the preimage, the only thing to do is try to get back our funds after timeout
           // NB: we first generate the tx skeleton and finalize it below, so we set logSuccess to false to avoid logging twice
