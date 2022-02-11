@@ -31,7 +31,7 @@ import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.DirectedHtlc._
 import fr.acinq.eclair.transactions.Scripts._
-import fr.acinq.eclair.transactions.Transactions.{TxGenerationResult, _}
+import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.protocol._
 import scodec.bits.ByteVector
@@ -649,16 +649,11 @@ object Helpers {
       // first we will claim our main output as soon as the delay is over
       val mainDelayedTx = withTxGenerationLog("local-main-delayed") {
         Transactions.makeClaimLocalDelayedOutputTx(tx, localParams.dustLimit, localRevocationPubkey, remoteParams.toSelfDelay, localDelayedPubkey, localParams.defaultFinalScriptPubKey, feeratePerKwDelayed)
-          .sign(keyManager,
-            signData = ClaimLocalDelayedOutputTxSigData(keyManager.delayedPaymentPoint(channelKeyPath), localPerCommitmentPoint, TxOwner.Local, commitmentFormat),
-            addSigData = ClaimLocalDelayedOutputTxAddSignatureData
-          )
+          .map(_.sign(keyManager,
+            signData = DelayedTxSigData(keyManager.delayedPaymentPoint(channelKeyPath), localPerCommitmentPoint, TxOwner.Local, commitmentFormat),
+            addSigData = NoAddSignatureData
+          ))
       }
-
-      /*.flatMap(
-        sign = claimDelayed => keyManager.sign(claimDelayed, keyManager.delayedPaymentPoint(channelKeyPath), localPerCommitmentPoint, TxOwner.Local, commitmentFormat),
-        addSig = (claimDelayed, sig) => Transactions.addSigs(claimDelayed, sig)
-      )*/
 
       // those are the preimages to existing received htlcs
       val preimages: Map[ByteVector32, ByteVector32] = commitments.localChanges.all.collect { case u: UpdateFulfillHtlc => u.paymentPreimage }.map(r => Crypto.sha256(r) -> r).toMap

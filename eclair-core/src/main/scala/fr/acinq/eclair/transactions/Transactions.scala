@@ -116,13 +116,16 @@ object Transactions {
     /** Block before which the transaction must be confirmed. */
     def confirmBefore: BlockHeight
   }
-  sealed trait SignableTransactionWithInputInfo[T <: TransactionWithInputInfo] extends TransactionWithInputInfo {
-      def sign(keyManager: ChannelKeyManager, signData: SignatureData[T], addSigData: AddSignatureData[T]): T
-  }
 
-  sealed trait SignatureData[-T <: TransactionWithInputInfo]
-  //case class DelayedTxSigData(publicKey: ExtendedPublicKey, remotePoint: PublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat) extends SignatureData
-  sealed trait AddSignatureData[-T <: TransactionWithInputInfo]
+  sealed trait SignatureData
+  case class DelayedTxSigData(publicKey: ExtendedPublicKey, remotePoint: PublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat) extends SignatureData
+  sealed trait AddSignatureData[+S <: SignatureData]
+  case object NoAddSignatureData extends AddSignatureData[Nothing]
+
+  sealed trait Signable[+T <: TransactionWithInputInfo, D <: SignatureData, A <: AddSignatureData[SignatureData]] {
+    this: T =>
+    def sign(keyManager: ChannelKeyManager, signData: D, addSigData: A): T
+  }
 
   case class CommitTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo { override def desc: String = "commit-tx" }
   /**
@@ -160,16 +163,13 @@ object Transactions {
   sealed trait ClaimRemoteCommitMainOutputTx extends TransactionWithInputInfo
   case class ClaimP2WPKHOutputTx(input: InputInfo, tx: Transaction) extends ClaimRemoteCommitMainOutputTx { override def desc: String = "remote-main" }
   case class ClaimRemoteDelayedOutputTx(input: InputInfo, tx: Transaction) extends ClaimRemoteCommitMainOutputTx { override def desc: String = "remote-main-delayed" }
-  case class ClaimLocalDelayedOutputTx(input: InputInfo, tx: Transaction) extends SignableTransactionWithInputInfo[ClaimLocalDelayedOutputTx] {
+  case class ClaimLocalDelayedOutputTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo with Signable[ClaimLocalDelayedOutputTx, DelayedTxSigData, NoAddSignatureData.type] {
     override def desc: String = "local-main-delayed"
-    override def sign(keyManager:  ChannelKeyManager, signData:  SignatureData[ClaimLocalDelayedOutputTx], addSigData:  AddSignatureData[ClaimLocalDelayedOutputTx]): ClaimLocalDelayedOutputTx = {
-      val sd = signData match { case x: ClaimLocalDelayedOutputTxSigData => x }
-      val sig = keyManager.sign(this, sd.publicKey, sd.remotePoint, sd.txOwner, sd.commitmentFormat)
+    override def sign(keyManager:  ChannelKeyManager, signData:  DelayedTxSigData, addSigData:  NoAddSignatureData.type): ClaimLocalDelayedOutputTx = {
+      val sig = keyManager.sign(this, signData.publicKey, signData.remotePoint, signData.txOwner, signData.commitmentFormat)
       addSigs(this, sig)
     }
-}
-  case class ClaimLocalDelayedOutputTxSigData(publicKey: ExtendedPublicKey, remotePoint: PublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat) extends SignatureData[ClaimLocalDelayedOutputTx]
-  case object ClaimLocalDelayedOutputTxAddSignatureData extends AddSignatureData[ClaimLocalDelayedOutputTx]
+  }
   case class MainPenaltyTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo { override def desc: String = "main-penalty" }
   case class HtlcPenaltyTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo { override def desc: String = "htlc-penalty" }
   case class ClaimHtlcDelayedOutputPenaltyTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo { override def desc: String = "htlc-delayed-penalty" }
@@ -182,22 +182,6 @@ object Transactions {
       case failed: TxGenerationResult.Failure => failed
     }
 
-    def flatMap[U <: TransactionWithInputInfo: TypeTag](transform: T => TxGenerationResult[U]): TxGenerationResult[U] = this match {
-      case TxGenerationResult.Success(txInfo) => transform(txInfo)
-      case TxGenerationResult.OutputNotFound => TxGenerationResult.OutputNotFound
-      case TxGenerationResult.AmountBelowDustLimit => TxGenerationResult.AmountBelowDustLimit
-      case failed: TxGenerationResult.Failure => failed
-    }
-
-    def sign(keyManager: ChannelKeyManager, signData: SignatureData[T], addSigData: AddSignatureData[T]): TxGenerationResult[T] = this match {
-      case TxGenerationResult.Success(txInfo) =>
-        Try(txInfo.asInstanceOf[SignableTransactionWithInputInfo[T]].sign(keyManager, signData, addSigData)) match {
-        case util.Success(signedTxInfo) => TxGenerationResult.Success(signedTxInfo)
-        case util.Failure(t) => TxGenerationResult.SignatureFailed(t.getMessage)
-      }
-      case other => other
-    }
-
     def toOption: Option[T] = this match {
       case TxGenerationResult.Success(txInfo) => Some(txInfo)
       case _ => None
@@ -206,7 +190,7 @@ object Transactions {
     def get: T = toOption.get
   }
   object TxGenerationResult {
-    case class Success[T <: TransactionWithInputInfo](txInfo: T) extends TxGenerationResult[T]
+    case class Success[T <: TransactionWithInputInfo: TypeTag](txInfo: T) extends TxGenerationResult[T]
     sealed trait Skipped extends TxGenerationResult[Nothing]
     case object OutputNotFound extends Skipped { override def toString = "output not found (probably trimmed)" }
     case object AmountBelowDustLimit extends Skipped { override def toString = "amount is below dust limit" }
