@@ -28,7 +28,7 @@ import fr.acinq.eclair.wire.internal.channel.version0.ChannelTypes0.{HtlcTxAndSi
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
 import fr.acinq.eclair.wire.protocol._
-import scodec.bits.{BinStringSyntax, ByteVector}
+import scodec.bits.ByteVector
 import scodec.codecs._
 import scodec.{Attempt, Codec}
 
@@ -241,20 +241,25 @@ private[channel] object ChannelCodecs2 {
       ("unsignedTx" | closingTxCodec) ::
         ("localClosingSigned" | lengthDelimited(closingSignedCodec))).as[ClosingTxProposed]
 
-    // backward compatible with optional(bool8, htlcTxCodec)
-    val htlcLocalOutputStatusCodec: Codec[LocalCommitPublished.HtlcOutputStatus] =
-      optional(bool8, htlcTxCodec).asDecoder.map {
-        case Some(htlcTx) => LocalCommitPublished.HtlcOutputStatus.Spendable(htlcTx)
-        case None => LocalCommitPublished.HtlcOutputStatus.PendingDownstreamSettlement
-      }.decodeOnly
-
-    val localCommitPublishedCodec: Codec[LocalCommitPublished] = (
-      ("commitTx" | txCodec) ::
-        ("claimMainDelayedOutputTx" | optional(bool8, claimLocalDelayedOutputTxCodec)) ::
-        ("htlcTxs" | mapCodec(outPointCodec, htlcLocalOutputStatusCodec)) ::
-        ("claimHtlcDelayedTx" | listOfN(uint16, htlcDelayedTxCodec)) ::
-        ("claimAnchorTxs" | listOfN(uint16, claimAnchorOutputTxCodec)) ::
-        ("spent" | spentMapCodec)).as[LocalCommitPublished]
+    val localCommitPublishedLegacyPreTxGenCodec: Codec[LocalCommitPublished] = (
+      ("commitTx" | txCodec) ~~
+        ("claimMainDelayedOutputTx" | optional(bool8, claimLocalDelayedOutputTxCodec)) ~~
+        ("htlcTxs" | mapCodec(outPointCodec, optional(bool8, htlcTxCodec))) ~~
+        ("claimHtlcDelayedTxs" | listOfN(uint16, htlcDelayedTxCodec)) ~~
+        ("claimAnchorTxs" | listOfN(uint16, claimAnchorOutputTxCodec)) ~~
+        ("irrevocablySpent" | spentMapCodec)).asDecoder.map {
+      case (commitTx, claimMainDelayedOutputTx_opt, htlcTxs, claimHtlcDelayedTxs, claimAnchorTxs, irrevocablySpent) =>
+        LocalCommitPublished(
+          commitTx = commitTx,
+          claimMainDelayedOutputTx = claimMainDelayedOutputTx_opt.map(TxGenerationResult.Success(_)).getOrElse(TxGenerationResult.Failure),
+          htlcTxs = htlcTxs.view.mapValues {
+            case Some(txInfo) => LocalCommitPublished.HtlcOutputStatus.Spendable(TxGenerationResult.Success(txInfo))
+            case None => LocalCommitPublished.HtlcOutputStatus.Unspendable
+          }.toMap,
+          claimHtlcDelayedTxs = claimHtlcDelayedTxs.map(TxGenerationResult.Success(_)),
+          claimAnchorTxs = claimAnchorTxs.map(TxGenerationResult.Success(_)),
+          irrevocablySpent = irrevocablySpent)
+    }.decodeOnly.as[LocalCommitPublished]
 
     // backward compatible with optional(bool8, claimHtlcTxCodec)
     val htlcRemoteOutputStatusCodec: Codec[RemoteCommitPublished.HtlcOutputStatus] =
@@ -319,7 +324,7 @@ private[channel] object ChannelCodecs2 {
         ("waitingSince" | int64.as[BlockHeight]) ::
         ("mutualCloseProposed" | listOfN(uint16, closingTxCodec)) ::
         ("mutualClosePublished" | listOfN(uint16, closingTxCodec)) ::
-        ("localCommitPublished" | optional(bool8, localCommitPublishedCodec)) ::
+        ("localCommitPublished" | optional(bool8, localCommitPublishedLegacyPreTxGenCodec)) ::
         ("remoteCommitPublished" | optional(bool8, remoteCommitPublishedCodec)) ::
         ("nextRemoteCommitPublished" | optional(bool8, remoteCommitPublishedCodec)) ::
         ("futureRemoteCommitPublished" | optional(bool8, remoteCommitPublishedCodec)) ::
