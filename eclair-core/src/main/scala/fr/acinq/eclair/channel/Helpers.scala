@@ -649,10 +649,16 @@ object Helpers {
       // first we will claim our main output as soon as the delay is over
       val mainDelayedTx = withTxGenerationLog("local-main-delayed") {
         Transactions.makeClaimLocalDelayedOutputTx(tx, localParams.dustLimit, localRevocationPubkey, remoteParams.toSelfDelay, localDelayedPubkey, localParams.defaultFinalScriptPubKey, feeratePerKwDelayed)
-      }.sign(
+          .sign(keyManager,
+            signData = ClaimLocalDelayedOutputTxSigData(keyManager.delayedPaymentPoint(channelKeyPath), localPerCommitmentPoint, TxOwner.Local, commitmentFormat),
+            addSigData = ClaimLocalDelayedOutputTxAddSignatureData
+          )
+      }
+
+      /*.flatMap(
         sign = claimDelayed => keyManager.sign(claimDelayed, keyManager.delayedPaymentPoint(channelKeyPath), localPerCommitmentPoint, TxOwner.Local, commitmentFormat),
         addSig = (claimDelayed, sig) => Transactions.addSigs(claimDelayed, sig)
-      )
+      )*/
 
       // those are the preimages to existing received htlcs
       val preimages: Map[ByteVector32, ByteVector32] = commitments.localChanges.all.collect { case u: UpdateFulfillHtlc => u.paymentPreimage }.map(r => Crypto.sha256(r) -> r).toMap
