@@ -294,7 +294,8 @@ private[channel] object ChannelCodecs3 {
       .typecase(0x00, codec.xmapc(TxGenerationResult.Success(_))(_.txInfo))
       .typecase(0x01, provide(TxGenerationResult.OutputNotFound))
       .typecase(0x02, provide(TxGenerationResult.AmountBelowDustLimit))
-      .typecase(0x03, provide(TxGenerationResult.Failure))
+      .typecase(0x03, limitedSizeBytes(256, utf8).as[TxGenerationResult.SignatureFailed])
+      .typecase(0x04, limitedSizeBytes(256, utf8).as[TxGenerationResult.UnknownFailure])
 
     val htlcLocalOutputStatusCodec: Codec[LocalCommitPublished.HtlcOutputStatus] = discriminated[LocalCommitPublished.HtlcOutputStatus].by(uint8)
       .typecase(0x00, txGenerationResultCodec(htlcTxCodec).as[LocalCommitPublished.HtlcOutputStatus.Spendable])
@@ -319,7 +320,7 @@ private[channel] object ChannelCodecs3 {
       case (commitTx, claimMainDelayedOutputTx_opt, htlcTxs, claimHtlcDelayedTxs, claimAnchorTxs, irrevocablySpent) =>
         LocalCommitPublished(
           commitTx = commitTx,
-          claimMainDelayedOutputTx = claimMainDelayedOutputTx_opt.map(TxGenerationResult.Success(_)).getOrElse(TxGenerationResult.Failure),
+          claimMainDelayedOutputTx = claimMainDelayedOutputTx_opt.map(TxGenerationResult.Success(_)).getOrElse(TxGenerationResult.BackWardCompatFailure),
           htlcTxs = htlcTxs.view.mapValues {
             case Some(txInfo) => LocalCommitPublished.HtlcOutputStatus.Spendable(TxGenerationResult.Success(txInfo))
             case None => LocalCommitPublished.HtlcOutputStatus.Unspendable

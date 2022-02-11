@@ -614,12 +614,12 @@ object Helpers {
         case Success(skipped: TxGenerationResult.Skipped) =>
           if (logSkipped) log.info(s"tx generation skipped: desc=$desc reason: ${skipped.toString}")
           skipped
-        case Success(TxGenerationResult.Failure) =>
+        case Success(failed: TxGenerationResult.Failure) =>
           if (logFailure) log.warning(s"tx generation failure: desc=$desc reason: unknown")
-          TxGenerationResult.Failure
+          failed
         case Failure(t) =>
           if (logFailure) log.warning(s"tx generation failure: desc=$desc reason: ${t.getMessage}")
-          TxGenerationResult.Failure
+          TxGenerationResult.UnknownFailure(t.getMessage)
       }
     }
 
@@ -648,11 +648,11 @@ object Helpers {
 
       // first we will claim our main output as soon as the delay is over
       val mainDelayedTx = withTxGenerationLog("local-main-delayed") {
-        Transactions.makeClaimLocalDelayedOutputTx(tx, localParams.dustLimit, localRevocationPubkey, remoteParams.toSelfDelay, localDelayedPubkey, localParams.defaultFinalScriptPubKey, feeratePerKwDelayed).map(claimDelayed => {
-          val sig = keyManager.sign(claimDelayed, keyManager.delayedPaymentPoint(channelKeyPath), localPerCommitmentPoint, TxOwner.Local, commitmentFormat)
-          Transactions.addSigs(claimDelayed, sig)
-        })
-      }
+        Transactions.makeClaimLocalDelayedOutputTx(tx, localParams.dustLimit, localRevocationPubkey, remoteParams.toSelfDelay, localDelayedPubkey, localParams.defaultFinalScriptPubKey, feeratePerKwDelayed)
+      }.sign(
+        sign = claimDelayed => keyManager.sign(claimDelayed, keyManager.delayedPaymentPoint(channelKeyPath), localPerCommitmentPoint, TxOwner.Local, commitmentFormat),
+        addSig = (claimDelayed, sig) => Transactions.addSigs(claimDelayed, sig)
+      )
 
       // those are the preimages to existing received htlcs
       val preimages: Map[ByteVector32, ByteVector32] = commitments.localChanges.all.collect { case u: UpdateFulfillHtlc => u.paymentPreimage }.map(r => Crypto.sha256(r) -> r).toMap

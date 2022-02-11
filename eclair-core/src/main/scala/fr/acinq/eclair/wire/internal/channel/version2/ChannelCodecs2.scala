@@ -251,7 +251,7 @@ private[channel] object ChannelCodecs2 {
       case (commitTx, claimMainDelayedOutputTx_opt, htlcTxs, claimHtlcDelayedTxs, claimAnchorTxs, irrevocablySpent) =>
         LocalCommitPublished(
           commitTx = commitTx,
-          claimMainDelayedOutputTx = claimMainDelayedOutputTx_opt.map(TxGenerationResult.Success(_)).getOrElse(TxGenerationResult.Failure),
+          claimMainDelayedOutputTx = claimMainDelayedOutputTx_opt.map(TxGenerationResult.Success(_)).getOrElse(TxGenerationResult.BackWardCompatFailure),
           htlcTxs = htlcTxs.view.mapValues {
             case Some(txInfo) => LocalCommitPublished.HtlcOutputStatus.Spendable(TxGenerationResult.Success(txInfo))
             case None => LocalCommitPublished.HtlcOutputStatus.Unspendable

@@ -160,9 +160,25 @@ object Transactions {
   sealed trait TxGenerationResult[+T <: TransactionWithInputInfo] {
     def map[U <: TransactionWithInputInfo: TypeTag](transform: T => U): TxGenerationResult[U] = this match {
       case TxGenerationResult.Success(txInfo) => TxGenerationResult.Success(transform(txInfo))
+      case skipped: TxGenerationResult.Skipped => skipped
+      case failed: TxGenerationResult.Failure => failed
+    }
+
+    def flatMap[U <: TransactionWithInputInfo: TypeTag](transform: T => TxGenerationResult[U]): TxGenerationResult[U] = this match {
+      case TxGenerationResult.Success(txInfo) => transform(txInfo)
       case TxGenerationResult.OutputNotFound => TxGenerationResult.OutputNotFound
       case TxGenerationResult.AmountBelowDustLimit => TxGenerationResult.AmountBelowDustLimit
-      case TxGenerationResult.Failure => TxGenerationResult.Failure
+      case failed: TxGenerationResult.Failure => failed
+    }
+
+    def sign[U <: TransactionWithInputInfo: TypeTag](sign: T => ByteVector64, addSig: (T, ByteVector64) => U): TxGenerationResult[U] = this flatMap { txInfo =>
+      Try {
+        val sig = sign(txInfo)
+        addSig(txInfo, sig)
+      } match {
+        case util.Success(signedTxInfo) => TxGenerationResult.Success(signedTxInfo)
+        case util.Failure(t) => TxGenerationResult.SignatureFailed(t.getMessage)
+      }
     }
 
     def toOption: Option[T] = this match {
@@ -177,7 +193,12 @@ object Transactions {
     sealed trait Skipped extends TxGenerationResult[Nothing]
     case object OutputNotFound extends Skipped { override def toString = "output not found (probably trimmed)" }
     case object AmountBelowDustLimit extends Skipped { override def toString = "amount is below dust limit" }
-    case object Failure extends TxGenerationResult[Nothing]
+    sealed trait Failure extends TxGenerationResult[Nothing]
+    case class SignatureFailed(reason: String) extends Failure { override def toString = s"signature failed (reason=$reason)" }
+    case class UnknownFailure(reason: String) extends Failure { override def toString = s"unknown failure (reason=$reason)" }
+
+    /** Used for backward compatibility. Not defining a type saves us from having to maintain compatibility in new codecs. */
+    val BackWardCompatFailure: UnknownFailure = UnknownFailure("placeholder for backward compatibility")
   }
 
   // @formatter:on

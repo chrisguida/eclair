@@ -312,7 +312,7 @@ case class LocalCommitPublished(commitTx: Transaction,
       case TxGenerationResult.Success(tx) => irrevocablySpent.contains(tx.input.outPoint)
       case TxGenerationResult.OutputNotFound => true
       case TxGenerationResult.AmountBelowDustLimit => true
-      case TxGenerationResult.Failure => false // we may have a bug preventing us from spending this output for now
+      case _: TxGenerationResult.Failure => false // we may have a bug preventing us from spending this output for now
     }
     // are all htlc outputs from the commitment tx spent (we need to check them all because we may receive preimages later)?
     val allHtlcsSpent = htlcTxs.forall {

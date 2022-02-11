@@ -353,7 +353,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         mutualClosePublished = Nil,
         localCommitPublished = Some(LocalCommitPublished(
           commitTx = tx2.tx,
-          claimMainDelayedOutputTx = TxGenerationResult.Failure,
+          claimMainDelayedOutputTx = TxGenerationResult.UnknownFailure("dummy"),
           htlcTxs = Map.empty,
           claimHtlcDelayedTxs = Nil,
           claimAnchorTxs = Nil,
@@ -381,7 +381,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         mutualClosePublished = tx1 :: Nil,
         localCommitPublished = Some(LocalCommitPublished(
           commitTx = tx2.tx,
-          claimMainDelayedOutputTx = TxGenerationResult.Failure,
+          claimMainDelayedOutputTx = TxGenerationResult.UnknownFailure("dummy"),
           htlcTxs = Map.empty,
           claimHtlcDelayedTxs = Nil,
           claimAnchorTxs = Nil,
@@ -409,7 +409,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         mutualClosePublished = tx1 :: Nil,
         localCommitPublished = Some(LocalCommitPublished(
           commitTx = tx2.tx,
-          claimMainDelayedOutputTx = TxGenerationResult.Failure,
+          claimMainDelayedOutputTx = TxGenerationResult.UnknownFailure("dummy"),
           htlcTxs = Map.empty,
           claimHtlcDelayedTxs = Nil,
           claimAnchorTxs = Nil,
@@ -485,7 +485,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         mutualClosePublished = Nil,
         localCommitPublished = Some(LocalCommitPublished(
           commitTx = tx1.tx,
-          claimMainDelayedOutputTx = TxGenerationResult.Failure,
+          claimMainDelayedOutputTx = TxGenerationResult.UnknownFailure("dummy"),
           htlcTxs = Map.empty,
           claimHtlcDelayedTxs = Nil,
           claimAnchorTxs = Nil,
@@ -532,7 +532,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         mutualClosePublished = Nil,
         localCommitPublished = Some(LocalCommitPublished(
           commitTx = tx1.tx,
-          claimMainDelayedOutputTx = TxGenerationResult.Failure,
+          claimMainDelayedOutputTx = TxGenerationResult.UnknownFailure("dummy"),
           htlcTxs = Map.empty,
           claimHtlcDelayedTxs = Nil,
           claimAnchorTxs = Nil,
