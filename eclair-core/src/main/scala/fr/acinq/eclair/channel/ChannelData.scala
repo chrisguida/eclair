@@ -349,14 +349,18 @@ object LocalCommitPublished {
 /**
  * Details about a force-close where they published their commitment.
  *
- * @param claimMainOutputTx tx claiming our main output (if we have one).
+ * @param claimMainOutputTx_opt tx claiming our main output (if we have one).
  * @param claimHtlcTxs      txs claiming HTLCs. There will be one entry for each pending HTLC. The value will be None
  *                          only for incoming HTLCs for which we don't have the preimage (we can't claim them yet).
  * @param claimAnchorTxs    txs spending anchor outputs to bump the feerate of the commitment tx (if applicable).
  *                          We currently only claim our local anchor, but it would be nice to claim both when it is
  *                          economical to do so to avoid polluting the utxo set.
  */
-case class RemoteCommitPublished(commitTx: Transaction, claimMainOutputTx: Option[ClaimRemoteCommitMainOutputTx], claimHtlcTxs: Map[OutPoint, RemoteCommitPublished.HtlcOutputStatus], claimAnchorTxs: List[ClaimAnchorOutputTx], irrevocablySpent: Map[OutPoint, Transaction]) extends CommitPublished {
+case class RemoteCommitPublished(commitTx: Transaction,
+                                 claimMainOutputTx_opt: Option[TxGenerationResult[ClaimRemoteCommitMainOutputTx]],
+                                 claimHtlcTxs: Map[OutPoint, RemoteCommitPublished.HtlcOutputStatus],
+                                 claimAnchorTxs: List[TxGenerationResult[ClaimAnchorOutputTx]],
+                                 irrevocablySpent: Map[OutPoint, Transaction]) extends CommitPublished {
   /**
    * A remote commit is considered done when all commitment tx outputs that we can spend have been spent and confirmed
    * (even if the spending tx was not ours).
@@ -366,11 +370,19 @@ case class RemoteCommitPublished(commitTx: Transaction, claimMainOutputTx: Optio
     // is the commitment tx confirmed (we need to check this because we may not have any outputs)?
     val isCommitTxConfirmed = confirmedTxs.contains(commitTx.txid)
     // is our main output confirmed (if we have one)?
-    val isMainOutputConfirmed = claimMainOutputTx.forall(tx => irrevocablySpent.contains(tx.input.outPoint))
+    val isMainOutputConfirmed = claimMainOutputTx_opt match {
+      case Some(claimMainOutputTx) => claimMainOutputTx match {
+        case TxGenerationResult.Success(tx) => irrevocablySpent.contains(tx.input.outPoint)
+        case TxGenerationResult.OutputNotFound => true
+        case TxGenerationResult.AmountBelowDustLimit => true
+        case _: TxGenerationResult.Failure => false // we may have a bug preventing us from spending this output for now
+      }
+      case None => true // this commit tx pays directly to our wallet, there is no claim tx
+    }
     // are all htlc outputs from the commitment tx spent (we need to check them all because we may receive preimages later)?
     val allHtlcsSpent = claimHtlcTxs.forall {
       case (outPoint, _: RemoteCommitPublished.HtlcOutputStatus.Spendable) => irrevocablySpent.contains(outPoint)
-      case (outPoint, RemoteCommitPublished.HtlcOutputStatus.Unknown) => irrevocablySpent.contains(outPoint)
+      case (outPoint, RemoteCommitPublished.HtlcOutputStatus.PendingDownstreamSettlement) => irrevocablySpent.contains(outPoint)
       case (_, RemoteCommitPublished.HtlcOutputStatus.Unspendable) => true // we will never be able to spend this output so we ignore it (our counterparty may forget to spend it and cause us to wait forever)
     }
     isCommitTxConfirmed && isMainOutputConfirmed && allHtlcsSpent
@@ -381,8 +393,8 @@ object RemoteCommitPublished {
   /** See [[LocalCommitPublished.HtlcOutputStatus]] */
   sealed trait HtlcOutputStatus
   object HtlcOutputStatus {
-    case class Spendable(claimHtlcTx: ClaimHtlcTx) extends HtlcOutputStatus
-    case object Unknown extends HtlcOutputStatus
+    case class Spendable(generationResult: TxGenerationResult[ClaimHtlcTx]) extends HtlcOutputStatus
+    case object PendingDownstreamSettlement extends HtlcOutputStatus
     case object Unspendable extends HtlcOutputStatus
   }
 }
