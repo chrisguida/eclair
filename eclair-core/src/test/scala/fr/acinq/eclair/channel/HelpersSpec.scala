@@ -497,7 +497,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         revokedCommitPublished =
           RevokedCommitPublished(
             commitTx = tx2.tx,
-            claimMainOutputTx = Some(ClaimP2WPKHOutputTx(tx3.input, tx3.tx)),
+            claimMainOutputTx_opt = Some(ClaimP2WPKHOutputTx(tx3.input, tx3.tx)),
             mainPenaltyTx = None,
             htlcPenaltyTxs = Nil,
             claimHtlcDelayedPenaltyTxs = Nil,
@@ -505,7 +505,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
           ) ::
             RevokedCommitPublished(
               commitTx = tx4.tx,
-              claimMainOutputTx = Some(ClaimP2WPKHOutputTx(tx5.input, tx5.tx)),
+              claimMainOutputTx_opt = Some(ClaimP2WPKHOutputTx(tx5.input, tx5.tx)),
               mainPenaltyTx = None,
               htlcPenaltyTxs = Nil,
               claimHtlcDelayedPenaltyTxs = Nil,
@@ -513,7 +513,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
             ) ::
             RevokedCommitPublished(
               commitTx = tx6.tx,
-              claimMainOutputTx = None,
+              claimMainOutputTx_opt = None,
               mainPenaltyTx = None,
               htlcPenaltyTxs = Nil,
               claimHtlcDelayedPenaltyTxs = Nil,
@@ -544,7 +544,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         revokedCommitPublished =
           RevokedCommitPublished(
             commitTx = tx2.tx,
-            claimMainOutputTx = Some(ClaimP2WPKHOutputTx(tx3.input, tx3.tx)),
+            claimMainOutputTx_opt = Some(ClaimP2WPKHOutputTx(tx3.input, tx3.tx)),
             mainPenaltyTx = None,
             htlcPenaltyTxs = Nil,
             claimHtlcDelayedPenaltyTxs = Nil,
@@ -552,7 +552,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
           ) ::
             RevokedCommitPublished(
               commitTx = tx4.tx,
-              claimMainOutputTx = Some(ClaimP2WPKHOutputTx(tx5.input, tx5.tx)),
+              claimMainOutputTx_opt = Some(ClaimP2WPKHOutputTx(tx5.input, tx5.tx)),
               mainPenaltyTx = None,
               htlcPenaltyTxs = Nil,
               claimHtlcDelayedPenaltyTxs = Nil,
@@ -560,7 +560,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
             ) ::
             RevokedCommitPublished(
               commitTx = tx6.tx,
-              claimMainOutputTx = None,
+              claimMainOutputTx_opt = None,
               mainPenaltyTx = None,
               htlcPenaltyTxs = Nil,
               claimHtlcDelayedPenaltyTxs = Nil,

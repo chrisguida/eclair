@@ -307,7 +307,7 @@ private[channel] object ChannelCodecs3 {
         ("htlcTxs" | mapCodec(outPointCodec, htlcLocalOutputStatusCodec)) ::
         ("claimHtlcDelayedTx" | listOfN(uint16, txGenerationResultCodec(htlcDelayedTxCodec))) ::
         ("claimAnchorTxs" | listOfN(uint16, txGenerationResultCodec(claimAnchorOutputTxCodec))) ::
-        ("spent" | spentMapCodec)).as[LocalCommitPublished]
+        ("irrevocablySpent" | spentMapCodec)).as[LocalCommitPublished]
 
     val localCommitPublishedLegacyPreTxGenCodec: Codec[LocalCommitPublished] = (
       ("commitTx" | txCodec) ~~
@@ -346,7 +346,7 @@ private[channel] object ChannelCodecs3 {
         ("claimMainOutputTx_opt" | optional(bool8, txGenerationResultCodec(claimRemoteCommitMainOutputTxCodec))) ::
         ("claimHtlcTxs" | mapCodec(outPointCodec, htlcRemoteOutputStatusCodec)) ::
         ("claimAnchorTxs" | listOfN(uint16, txGenerationResultCodec(claimAnchorOutputTxCodec))) ::
-        ("spent" | spentMapCodec)).as[RemoteCommitPublished]
+        ("irrevocablySpent" | spentMapCodec)).as[RemoteCommitPublished]
 
     val remoteCommitPublishedLegacyPreTxGenCodec: Codec[RemoteCommitPublished] = (
       ("commitTx" | txCodec) ~~
@@ -375,11 +375,35 @@ private[channel] object ChannelCodecs3 {
 
     val revokedCommitPublishedCodec: Codec[RevokedCommitPublished] = (
       ("commitTx" | txCodec) ::
-        ("claimMainOutputTx" | optional(bool8, claimRemoteCommitMainOutputTxCodec)) ::
-        ("mainPenaltyTx" | optional(bool8, mainPenaltyTxCodec)) ::
-        ("htlcPenaltyTxs" | listOfN(uint16, htlcPenaltyTxCodec)) ::
-        ("claimHtlcDelayedPenaltyTxs" | listOfN(uint16, claimHtlcDelayedOutputPenaltyTxCodec)) ::
-        ("spent" | spentMapCodec)).as[RevokedCommitPublished]
+        ("claimMainOutputTx_opt" | optional(bool8, txGenerationResultCodec(claimRemoteCommitMainOutputTxCodec))) ::
+        ("mainPenaltyTx" | txGenerationResultCodec(mainPenaltyTxCodec)) ::
+        ("htlcPenaltyTxs" | listOfN(uint16, txGenerationResultCodec(htlcPenaltyTxCodec))) ::
+        ("claimHtlcDelayedPenaltyTxs" | listOfN(uint16, txGenerationResultCodec(claimHtlcDelayedOutputPenaltyTxCodec))) ::
+        ("irrevocablySpent" | spentMapCodec)).as[RevokedCommitPublished]
+
+    val revokedCommitPublishedLegacyPreTxGenCodec: Codec[RevokedCommitPublished] = (
+      ("commitTx" | txCodec) ~~
+        ("claimMainOutputTx_opt" | optional(bool8, claimRemoteCommitMainOutputTxCodec)) ~~
+        ("mainPenaltyTx" | optional(bool8, mainPenaltyTxCodec)) ~~
+        ("htlcPenaltyTxs" | listOfN(uint16, htlcPenaltyTxCodec)) ~~
+        ("claimHtlcDelayedPenaltyTxs" | listOfN(uint16, claimHtlcDelayedOutputPenaltyTxCodec)) ~~
+        ("irrevocablySpent" | spentMapCodec)).asDecoder.map {
+      case (commitTx, claimMainOutputTx_opt, mainPenaltyTx, htlcPenaltyTxs, claimHtlcDelayedPenaltyTxs, irrevocablySpent) =>
+        RevokedCommitPublished(
+          commitTx = commitTx,
+          claimMainOutputTx_opt = claimMainOutputTx_opt.map(TxGenerationResult.Success(_)),
+          mainPenaltyTx = mainPenaltyTx.map(TxGenerationResult.Success(_)).getOrElse(TxGenerationResult.BackWardCompatFailure),
+          htlcPenaltyTxs = htlcPenaltyTxs.map(TxGenerationResult.Success(_)),
+          claimHtlcDelayedPenaltyTxs = claimHtlcDelayedPenaltyTxs.map(TxGenerationResult.Success(_)),
+          irrevocablySpent = irrevocablySpent
+        )
+    }.decodeOnly.as[RevokedCommitPublished]
+
+    // this codec handles backward compatibility with the former optional(bool8, remoteCommitPublishedCodec) (order matters!!)
+    val revokedCommitPublishedCompatCodec: Codec[RevokedCommitPublished] = discriminated[RevokedCommitPublished].by(bits(8))
+      .typecase(bin"00000001", revokedCommitPublishedCodec.xmapc(Some(_))(_.value))
+      .typecase(bin"00000000", provide(None))
+      .typecase(bin"11111111", revokedCommitPublishedLegacyPreTxGenCodec.asDecoder.map(Some(_)).decodeOnly)
 
     val DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec: Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED] = (
       ("commitments" | commitmentsCodec) ::
@@ -444,7 +468,7 @@ private[channel] object ChannelCodecs3 {
         ("remoteCommitPublished" | remoteCommitPublishedCompatCodec) ::
         ("nextRemoteCommitPublished" | remoteCommitPublishedCompatCodec) ::
         ("futureRemoteCommitPublished" | remoteCommitPublishedCompatCodec) ::
-        ("revokedCommitPublished" | listOfN(uint16, revokedCommitPublishedCodec))).as[DATA_CLOSING]
+        ("revokedCommitPublished" | listOfN(uint16, revokedCommitPublishedCompatCodec))).as[DATA_CLOSING]
 
     val DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_Codec: Codec[DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT] = (
       ("commitments" | commitmentsCodec) ::

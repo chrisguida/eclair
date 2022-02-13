@@ -1184,16 +1184,16 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val rvk = alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.head
     assert(rvk.commitTx === bobRevokedTx)
     if (!channelFeatures.paysDirectlyToWallet) {
-      assert(rvk.claimMainOutputTx.nonEmpty)
+      assert(rvk.claimMainOutputTx_opt.nonEmpty)
     }
     assert(rvk.mainPenaltyTx.nonEmpty)
     assert(rvk.htlcPenaltyTxs.size === 2)
     assert(rvk.claimHtlcDelayedPenaltyTxs.isEmpty)
-    val penaltyTxs = rvk.claimMainOutputTx.toList ++ rvk.mainPenaltyTx.toList ++ rvk.htlcPenaltyTxs
+    val penaltyTxs = rvk.claimMainOutputTx_opt.toList ++ rvk.mainPenaltyTx.toList ++ rvk.htlcPenaltyTxs
 
     // alice publishes the penalty txs
     if (!channelFeatures.paysDirectlyToWallet) {
-      assert(alice2blockchain.expectMsgType[PublishFinalTx].tx === rvk.claimMainOutputTx.get.tx)
+      assert(alice2blockchain.expectMsgType[PublishFinalTx].tx === rvk.claimMainOutputTx_opt.get.tx)
     }
     assert(alice2blockchain.expectMsgType[PublishFinalTx].tx === rvk.mainPenaltyTx.get.tx)
     assert(Set(alice2blockchain.expectMsgType[PublishFinalTx].tx, alice2blockchain.expectMsgType[PublishFinalTx].tx) === rvk.htlcPenaltyTxs.map(_.tx).toSet)
@@ -1216,7 +1216,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // alice watches confirmation for the outputs only her can claim
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === bobRevokedTx.txid)
     if (!channelFeatures.paysDirectlyToWallet) {
-      assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === rvk.claimMainOutputTx.get.tx.txid)
+      assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === rvk.claimMainOutputTx_opt.get.tx.txid)
     }
 
     // alice watches outputs that can be spent by both parties
@@ -1240,7 +1240,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(txListener.expectMsgType[TransactionConfirmed].tx === bobRevokedTx)
     alice ! WatchTxConfirmedTriggered(BlockHeight(110), 1, rvk.mainPenaltyTx.get.tx)
     if (!channelFeatures.paysDirectlyToWallet) {
-      alice ! WatchTxConfirmedTriggered(BlockHeight(110), 2, rvk.claimMainOutputTx.get.tx)
+      alice ! WatchTxConfirmedTriggered(BlockHeight(110), 2, rvk.claimMainOutputTx_opt.get.tx)
     }
     alice ! WatchTxConfirmedTriggered(BlockHeight(115), 0, rvk.htlcPenaltyTxs(0).tx)
     assert(alice.stateName === CLOSING)
@@ -1304,7 +1304,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // bob's second revoked tx confirms: once all penalty txs are confirmed, alice can move to the closed state
     // NB: if multiple txs confirm in the same block, we may receive the events in any order
     alice ! WatchTxConfirmedTriggered(BlockHeight(100), 1, rvk2.mainPenaltyTx.get.tx)
-    alice ! WatchTxConfirmedTriggered(BlockHeight(100), 2, rvk2.claimMainOutputTx.get.tx)
+    alice ! WatchTxConfirmedTriggered(BlockHeight(100), 2, rvk2.claimMainOutputTx_opt.get.tx)
     alice ! WatchTxConfirmedTriggered(BlockHeight(100), 3, rvk2.commitTx)
     alice ! WatchTxConfirmedTriggered(BlockHeight(115), 0, rvk2.htlcPenaltyTxs(0).tx)
     assert(alice.stateName === CLOSING)
@@ -1327,11 +1327,11 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // the commit tx hasn't been confirmed yet, so we watch the funding output first
     alice2blockchain.expectMsgType[WatchFundingSpent]
     // then we should re-publish unconfirmed transactions
-    rvk.claimMainOutputTx.foreach(claimMain => assert(alice2blockchain.expectMsgType[PublishFinalTx].tx === claimMain.tx))
+    rvk.claimMainOutputTx_opt.foreach(claimMain => assert(alice2blockchain.expectMsgType[PublishFinalTx].tx === claimMain.tx))
     assert(alice2blockchain.expectMsgType[PublishFinalTx].tx === rvk.mainPenaltyTx.get.tx)
     rvk.htlcPenaltyTxs.foreach(htlcPenalty => assert(alice2blockchain.expectMsgType[PublishFinalTx].tx === htlcPenalty.tx))
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === bobRevokedTx.txid)
-    rvk.claimMainOutputTx.foreach(claimMain => assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === claimMain.tx.txid))
+    rvk.claimMainOutputTx_opt.foreach(claimMain => assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === claimMain.tx.txid))
     assert(alice2blockchain.expectMsgType[WatchOutputSpent].outputIndex === rvk.mainPenaltyTx.get.input.outPoint.index)
     rvk.htlcPenaltyTxs.foreach(htlcPenalty => assert(alice2blockchain.expectMsgType[WatchOutputSpent].outputIndex === htlcPenalty.input.outPoint.index))
   }
@@ -1363,9 +1363,9 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val rvk = alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.head
     assert(rvk.commitTx === bobRevokedCommit.commitTxAndRemoteSig.commitTx.tx)
     if (channelFeatures.paysDirectlyToWallet) {
-      assert(rvk.claimMainOutputTx.isEmpty)
+      assert(rvk.claimMainOutputTx_opt.isEmpty)
     } else {
-      assert(rvk.claimMainOutputTx.nonEmpty)
+      assert(rvk.claimMainOutputTx_opt.nonEmpty)
     }
     assert(rvk.mainPenaltyTx.nonEmpty)
     assert(rvk.htlcPenaltyTxs.size === 4)
@@ -1376,7 +1376,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     (1 to claimTxsCount).foreach(_ => alice2blockchain.expectMsgType[PublishTx])
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === rvk.commitTx.txid)
     if (!channelFeatures.paysDirectlyToWallet) {
-      assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === rvk.claimMainOutputTx.get.tx.txid)
+      assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === rvk.claimMainOutputTx_opt.get.tx.txid)
     }
     (1 to 5).foreach(_ => alice2blockchain.expectMsgType[WatchOutputSpent]) // main output penalty and 4 htlc penalties
     alice2blockchain.expectNoMessage(1 second)
@@ -1440,7 +1440,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice ! WatchTxConfirmedTriggered(BlockHeight(100), 3, rvk.commitTx)
     alice ! WatchTxConfirmedTriggered(BlockHeight(110), 0, rvk.mainPenaltyTx.get.tx)
     if (!channelFeatures.paysDirectlyToWallet) {
-      alice ! WatchTxConfirmedTriggered(BlockHeight(110), 1, rvk.claimMainOutputTx.get.tx)
+      alice ! WatchTxConfirmedTriggered(BlockHeight(110), 1, rvk.claimMainOutputTx_opt.get.tx)
     }
     alice ! WatchTxConfirmedTriggered(BlockHeight(110), 2, remainingHtlcPenaltyTxs.head.tx)
     alice ! WatchTxConfirmedTriggered(BlockHeight(115), 2, remainingHtlcPenaltyTxs.last.tx)
@@ -1488,7 +1488,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // alice publishes the penalty txs and watches outputs
     (1 to 6).foreach(_ => alice2blockchain.expectMsgType[PublishTx]) // 2 main outputs and 4 htlcs
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === rvk.commitTx.txid)
-    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === rvk.claimMainOutputTx.get.tx.txid)
+    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === rvk.claimMainOutputTx_opt.get.tx.txid)
     (1 to 5).foreach(_ => alice2blockchain.expectMsgType[WatchOutputSpent]) // main output penalty and 4 htlc penalties
     alice2blockchain.expectNoMessage(1 second)
 

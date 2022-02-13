@@ -552,7 +552,7 @@ class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with Channel
     val aliceClosing = alice.stateData.asInstanceOf[DATA_CLOSING]
     assert(aliceClosing.revokedCommitPublished.length === 1)
     val rvk = aliceClosing.revokedCommitPublished.head
-    assert(rvk.claimMainOutputTx.nonEmpty)
+    assert(rvk.claimMainOutputTx_opt.nonEmpty)
     assert(rvk.mainPenaltyTx.nonEmpty)
     assert(rvk.htlcPenaltyTxs.length === 4)
     assert(rvk.claimHtlcDelayedPenaltyTxs.isEmpty)
@@ -564,7 +564,7 @@ class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with Channel
     assert(!rvk1.isDone)
 
     // Main output has been confirmed.
-    val rvk2 = Closing.updateRevokedCommitPublished(rvk1, rvk.claimMainOutputTx.get.tx)
+    val rvk2 = Closing.updateRevokedCommitPublished(rvk1, rvk.claimMainOutputTx_opt.get.tx)
     assert(!rvk2.isDone)
 
     // Two of our htlc penalty txs have been confirmed.
