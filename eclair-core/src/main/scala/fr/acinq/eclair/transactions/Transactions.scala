@@ -185,7 +185,7 @@ object Transactions {
     case class Failure(reason: String) extends TxGenerationResult[Nothing] { override def toString = s"unknown failure (reason=$reason)" }
 
     /** Used for backward compatibility. Not defining a type saves us from having to maintain compatibility in new codecs. */
-    val BackWardCompatFailure: Failure = Failure("placeholder for backward compatibility")
+    val BackwardCompatFailure: Failure = Failure("placeholder for backward compatibility")
   }
 
   // @formatter:on

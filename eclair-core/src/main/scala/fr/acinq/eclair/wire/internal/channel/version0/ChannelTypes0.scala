@@ -56,7 +56,7 @@ private[channel] object ChannelTypes0 {
       // NB: irrevocablySpent may contain transactions that belong to our peer: we will drop them in this migration but
       // the channel will put a watch at start-up which will make us fetch the spending transaction.
       val irrevocablySpentNew = irrevocablySpent.collect { case (outpoint, txid) if knownTxs.contains(txid) => (outpoint, knownTxs(txid)) }
-      val claimMainDelayedOutputTxNew = claimMainDelayedOutputTx.map(tx => ClaimLocalDelayedOutputTx(getPartialInputInfo(commitTx, tx), tx)).map(TxGenerationResult.Success(_)).getOrElse(TxGenerationResult.BackWardCompatFailure)
+      val claimMainDelayedOutputTxNew = claimMainDelayedOutputTx.map(tx => ClaimLocalDelayedOutputTx(getPartialInputInfo(commitTx, tx), tx)).map(TxGenerationResult.Success(_)).getOrElse(TxGenerationResult.BackwardCompatFailure)
       val htlcSuccessTxsNew = htlcSuccessTxs.map(tx => HtlcSuccessTx(getPartialInputInfo(commitTx, tx), tx, ByteVector32.Zeroes, 0, BlockHeight(0)))
       val htlcTimeoutTxsNew = htlcTimeoutTxs.map(tx => HtlcTimeoutTx(getPartialInputInfo(commitTx, tx), tx, 0, BlockHeight(0)))
       val htlcTxsNew = (htlcSuccessTxsNew ++ htlcTimeoutTxsNew).map(tx => tx.input.outPoint -> channel.LocalCommitPublished.HtlcOutputStatus.Spendable(TxGenerationResult.Success(tx))).toMap
@@ -91,7 +91,7 @@ private[channel] object ChannelTypes0 {
       // the channel will put a watch at start-up which will make us fetch the spending transaction.
       val irrevocablySpentNew = irrevocablySpent.collect { case (outpoint, txid) if knownTxs.contains(txid) => (outpoint, knownTxs(txid)) }
       val claimMainOutputTxNew = claimMainOutputTx.map(tx => TxGenerationResult.Success(ClaimP2WPKHOutputTx(getPartialInputInfo(commitTx, tx), tx)))
-      val mainPenaltyTxNew = mainPenaltyTx.map(tx => TxGenerationResult.Success(MainPenaltyTx(getPartialInputInfo(commitTx, tx), tx))).getOrElse(TxGenerationResult.BackWardCompatFailure)
+      val mainPenaltyTxNew = mainPenaltyTx.map(tx => TxGenerationResult.Success(MainPenaltyTx(getPartialInputInfo(commitTx, tx), tx))).getOrElse(TxGenerationResult.BackwardCompatFailure)
       val htlcPenaltyTxsNew = htlcPenaltyTxs.map(tx => TxGenerationResult.Success(HtlcPenaltyTx(getPartialInputInfo(commitTx, tx), tx)))
       val claimHtlcDelayedPenaltyTxsNew = claimHtlcDelayedPenaltyTxs.map { tx =>
         // We don't have all the `InputInfo` data, but it's ok: we only use the tx that is fully signed.

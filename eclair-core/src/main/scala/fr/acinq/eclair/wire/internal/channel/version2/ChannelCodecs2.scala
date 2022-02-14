@@ -251,7 +251,7 @@ private[channel] object ChannelCodecs2 {
       case (commitTx, claimMainDelayedOutputTx_opt, htlcTxs, claimHtlcDelayedTxs, claimAnchorTxs, irrevocablySpent) =>
         LocalCommitPublished(
           commitTx = commitTx,
-          claimMainDelayedOutputTx = claimMainDelayedOutputTx_opt.map(TxGenerationResult.Success(_)).getOrElse(TxGenerationResult.BackWardCompatFailure),
+          claimMainDelayedOutputTx = claimMainDelayedOutputTx_opt.map(TxGenerationResult.Success(_)).getOrElse(TxGenerationResult.BackwardCompatFailure),
           htlcTxs = htlcTxs.view.mapValues {
             case Some(txInfo) => LocalCommitPublished.HtlcOutputStatus.Spendable(TxGenerationResult.Success(txInfo))
             case None => LocalCommitPublished.HtlcOutputStatus.PendingDownstreamSettlement
@@ -291,7 +291,7 @@ private[channel] object ChannelCodecs2 {
         RevokedCommitPublished(
           commitTx = commitTx,
           claimMainOutputTx_opt = claimMainOutputTx_opt.map(TxGenerationResult.Success(_)),
-          mainPenaltyTx = mainPenaltyTx.map(TxGenerationResult.Success(_)).getOrElse(TxGenerationResult.BackWardCompatFailure),
+          mainPenaltyTx = mainPenaltyTx.map(TxGenerationResult.Success(_)).getOrElse(TxGenerationResult.BackwardCompatFailure),
           htlcPenaltyTxs = htlcPenaltyTxs.map(TxGenerationResult.Success(_)),
           claimHtlcDelayedPenaltyTxs = claimHtlcDelayedPenaltyTxs.map(TxGenerationResult.Success(_)),
           irrevocablySpent = irrevocablySpent
