@@ -259,6 +259,24 @@ object TransactionWithInputInfoSerializer extends MinimalSerializer({
   ))
 })
 
+object TxGenerationResultSerializer extends  ConvertClassSerializer[TxGenerationResult[_]]({
+  case TxGenerationResult.Success(txInfo) => txInfo
+  case skipped: TxGenerationResult.Skipped => skipped.reason
+  case failure: TxGenerationResult.Failure => failure.reason
+})
+
+object LocalCommitPublishedHtlcOutputStatusSerializer extends  ConvertClassSerializer[LocalCommitPublished.HtlcOutputStatus]({
+  case spendable: LocalCommitPublished.HtlcOutputStatus.Spendable => spendable.generationResult
+  case LocalCommitPublished.HtlcOutputStatus.PendingDownstreamSettlement => "pending downstream settlement"
+  case LocalCommitPublished.HtlcOutputStatus.Unspendable => "unspendable"
+})
+
+object RemoteCommitPublishedHtlcOutputStatusSerializer extends  ConvertClassSerializer[RemoteCommitPublished.HtlcOutputStatus]({
+  case spendable: RemoteCommitPublished.HtlcOutputStatus.Spendable => spendable.generationResult
+  case RemoteCommitPublished.HtlcOutputStatus.PendingDownstreamSettlement => "pending downstream settlement"
+  case RemoteCommitPublished.HtlcOutputStatus.Unspendable => "unspendable"
+})
+
 object InetSocketAddressSerializer extends MinimalSerializer({
   case address: InetSocketAddress => JString(HostAndPort.fromParts(address.getHostString, address.getPort).toString)
 })
@@ -516,6 +534,9 @@ object JsonSerializers {
     PrivateKeySerializer +
     TransactionSerializer +
     TransactionWithInputInfoSerializer +
+    TxGenerationResultSerializer +
+    LocalCommitPublishedHtlcOutputStatusSerializer +
+    RemoteCommitPublishedHtlcOutputStatusSerializer +
     InetSocketAddressSerializer +
     OutPointSerializer +
     OutPointKeySerializer +

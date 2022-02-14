@@ -179,10 +179,10 @@ object Transactions {
   }
   object TxGenerationResult {
     case class Success[T <: TransactionWithInputInfo: TypeTag](txInfo: T) extends TxGenerationResult[T]
-    sealed trait Skipped extends TxGenerationResult[Nothing]
-    case object OutputNotFound extends Skipped { override def toString = "output not found (probably trimmed)" }
-    case object AmountBelowDustLimit extends Skipped { override def toString = "amount is below dust limit" }
-    case class Failure(reason: String) extends TxGenerationResult[Nothing] { override def toString = s"unknown failure (reason=$reason)" }
+    sealed trait Skipped extends TxGenerationResult[Nothing] { def reason: String }
+    case object OutputNotFound extends Skipped { override def reason = "output not found (probably trimmed)" }
+    case object AmountBelowDustLimit extends Skipped { override def reason = "amount is below dust limit" }
+    case class Failure(reason: String) extends TxGenerationResult[Nothing]
 
     /** Used for backward compatibility. Not defining a type saves us from having to maintain compatibility in new codecs. */
     val BackwardCompatFailure: Failure = Failure("placeholder for backward compatibility")
