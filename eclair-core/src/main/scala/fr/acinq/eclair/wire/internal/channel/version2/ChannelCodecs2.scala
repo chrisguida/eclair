@@ -31,6 +31,7 @@ import fr.acinq.eclair.wire.protocol._
 import scodec.bits.ByteVector
 import scodec.codecs._
 import scodec.{Attempt, Codec}
+import shapeless.{::, HNil}
 
 private[channel] object ChannelCodecs2 {
 
@@ -242,13 +243,13 @@ private[channel] object ChannelCodecs2 {
         ("localClosingSigned" | lengthDelimited(closingSignedCodec))).as[ClosingTxProposed]
 
     val localCommitPublishedCodec: Codec[LocalCommitPublished] = (
-      ("commitTx" | txCodec) ~~
-        ("claimMainDelayedOutputTx_opt" | optional(bool8, claimLocalDelayedOutputTxCodec)) ~~
-        ("htlcTxs" | mapCodec(outPointCodec, optional(bool8, htlcTxCodec))) ~~
-        ("claimHtlcDelayedTxs" | listOfN(uint16, htlcDelayedTxCodec)) ~~
-        ("claimAnchorTxs" | listOfN(uint16, claimAnchorOutputTxCodec)) ~~
+      ("commitTx" | txCodec) ::
+        ("claimMainDelayedOutputTx_opt" | optional(bool8, claimLocalDelayedOutputTxCodec)) ::
+        ("htlcTxs" | mapCodec(outPointCodec, optional(bool8, htlcTxCodec))) ::
+        ("claimHtlcDelayedTxs" | listOfN(uint16, htlcDelayedTxCodec)) ::
+        ("claimAnchorTxs" | listOfN(uint16, claimAnchorOutputTxCodec)) ::
         ("irrevocablySpent" | spentMapCodec)).asDecoder.map {
-      case (commitTx, claimMainDelayedOutputTx_opt, htlcTxs, claimHtlcDelayedTxs, claimAnchorTxs, irrevocablySpent) =>
+      case commitTx :: claimMainDelayedOutputTx_opt :: htlcTxs :: claimHtlcDelayedTxs :: claimAnchorTxs :: irrevocablySpent :: HNil =>
         LocalCommitPublished(
           commitTx = commitTx,
           claimMainDelayedOutputTx = claimMainDelayedOutputTx_opt.map(TxGenerationResult.Success(_)).getOrElse(TxGenerationResult.BackwardCompatFailure),
@@ -262,12 +263,12 @@ private[channel] object ChannelCodecs2 {
     }.decodeOnly.as[LocalCommitPublished]
 
     val remoteCommitPublishedCodec: Codec[RemoteCommitPublished] = (
-      ("commitTx" | txCodec) ~~
-        ("claimMainOutputTx_opt" | optional(bool8, claimRemoteCommitMainOutputTxCodec)) ~~
-        ("claimHtlcTxs" | mapCodec(outPointCodec, optional(bool8, claimHtlcTxCodec))) ~~
-        ("claimAnchorTxs" | listOfN(uint16, claimAnchorOutputTxCodec)) ~~
+      ("commitTx" | txCodec) ::
+        ("claimMainOutputTx_opt" | optional(bool8, claimRemoteCommitMainOutputTxCodec)) ::
+        ("claimHtlcTxs" | mapCodec(outPointCodec, optional(bool8, claimHtlcTxCodec))) ::
+        ("claimAnchorTxs" | listOfN(uint16, claimAnchorOutputTxCodec)) ::
         ("irrevocablySpent" | spentMapCodec)).asDecoder.map {
-      case (commitTx, claimMainOutputTx_opt, claimHtlcTxs, claimAnchorTxs, irrevocablySpent) =>
+      case commitTx :: claimMainOutputTx_opt :: claimHtlcTxs :: claimAnchorTxs :: irrevocablySpent :: HNil =>
         RemoteCommitPublished(
           commitTx = commitTx,
           claimMainOutputTx_opt = claimMainOutputTx_opt.map(TxGenerationResult.Success(_)),
@@ -281,13 +282,13 @@ private[channel] object ChannelCodecs2 {
     }.decodeOnly.as[RemoteCommitPublished]
 
     val revokedCommitPublishedCodec: Codec[RevokedCommitPublished] = (
-      ("commitTx" | txCodec) ~~
-        ("claimMainOutputTx_opt" | optional(bool8, claimRemoteCommitMainOutputTxCodec)) ~~
-        ("mainPenaltyTx" | optional(bool8, mainPenaltyTxCodec)) ~~
-        ("htlcPenaltyTxs" | listOfN(uint16, htlcPenaltyTxCodec)) ~~
-        ("claimHtlcDelayedPenaltyTxs" | listOfN(uint16, claimHtlcDelayedOutputPenaltyTxCodec)) ~~
+      ("commitTx" | txCodec) ::
+        ("claimMainOutputTx_opt" | optional(bool8, claimRemoteCommitMainOutputTxCodec)) ::
+        ("mainPenaltyTx" | optional(bool8, mainPenaltyTxCodec)) ::
+        ("htlcPenaltyTxs" | listOfN(uint16, htlcPenaltyTxCodec)) ::
+        ("claimHtlcDelayedPenaltyTxs" | listOfN(uint16, claimHtlcDelayedOutputPenaltyTxCodec)) ::
         ("spent" | spentMapCodec)).asDecoder.map {
-      case (commitTx, claimMainOutputTx_opt, mainPenaltyTx, htlcPenaltyTxs, claimHtlcDelayedPenaltyTxs, irrevocablySpent) =>
+      case commitTx :: claimMainOutputTx_opt :: mainPenaltyTx :: htlcPenaltyTxs :: claimHtlcDelayedPenaltyTxs :: irrevocablySpent :: HNil =>
         RevokedCommitPublished(
           commitTx = commitTx,
           claimMainOutputTx_opt = claimMainOutputTx_opt.map(TxGenerationResult.Success(_)),
