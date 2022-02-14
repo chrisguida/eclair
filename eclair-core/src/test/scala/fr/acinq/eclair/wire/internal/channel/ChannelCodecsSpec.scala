@@ -193,7 +193,8 @@ class ChannelCodecsSpec extends AnyFunSuite {
     val closingLocal = stateDataCodec.decode(dataClosingLocal.bits).require.value.asInstanceOf[DATA_CLOSING]
     assert(closingLocal.localCommitPublished.nonEmpty)
     assert(closingLocal.localCommitPublished.get.commitTx.txOut.size === 6)
-    assert(closingLocal.localCommitPublished.get.htlcTxs.size === 4)
+    assert(closingLocal.localCommitPublished.get.htlcSuccessTxs.size === 2)
+    assert(closingLocal.localCommitPublished.get.htlcTimeoutTxs.size === 2)
     assert(closingLocal.localCommitPublished.get.claimHtlcDelayedTxs.size === 4)
     assert(closingLocal.localCommitPublished.get.irrevocablySpent.isEmpty)
 

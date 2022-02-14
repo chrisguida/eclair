@@ -26,7 +26,7 @@ import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
 import fr.acinq.eclair.wire.protocol.UpdateMessage
 import fr.acinq.eclair.{BlockHeight, FeatureSupport, Features}
-import scodec.bits.{BinStringSyntax, BitVector, ByteVector}
+import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
 import scodec.{Attempt, Codec}
 import shapeless.{::, HNil}
@@ -298,14 +298,15 @@ private[channel] object ChannelCodecs3 {
       .typecase(0x03, limitedSizeBytes(256, lengthDelimited(utf8)).as[TxGenerationResult.Failure])
 
     val htlcLocalOutputStatusCodec: Codec[LocalCommitPublished.HtlcOutputStatus] = discriminated[LocalCommitPublished.HtlcOutputStatus].by(uint8)
-      .typecase(0x00, txGenerationResultCodec(htlcTxCodec).as[LocalCommitPublished.HtlcOutputStatus.Spendable])
+      .typecase(0x00, txGenerationResultCodec(htlcSuccessTxCodec).as[LocalCommitPublished.HtlcOutputStatus.Spendable])
       .typecase(0x01, provide(LocalCommitPublished.HtlcOutputStatus.PendingDownstreamSettlement))
       .typecase(0x02, provide(LocalCommitPublished.HtlcOutputStatus.Unspendable))
 
     val localCommitPublishedCodec: Codec[LocalCommitPublished] = (
       ("commitTx" | txCodec) ::
         ("claimMainDelayedOutputTx" | txGenerationResultCodec(claimLocalDelayedOutputTxCodec)) ::
-        ("htlcTxs" | mapCodec(outPointCodec, htlcLocalOutputStatusCodec)) ::
+        ("htlcSuccessTxs" | mapCodec(outPointCodec, htlcLocalOutputStatusCodec)) ::
+        ("htlcTimeoutTxs" | mapCodec(outPointCodec, txGenerationResultCodec(htlcTimeoutTxCodec))) ::
         ("claimHtlcDelayedTx" | listOfN(uint16, txGenerationResultCodec(htlcDelayedTxCodec))) ::
         ("claimAnchorTxs" | listOfN(uint16, txGenerationResultCodec(claimAnchorOutputTxCodec))) ::
         ("irrevocablySpent" | spentMapCodec)).as[LocalCommitPublished]
@@ -321,10 +322,8 @@ private[channel] object ChannelCodecs3 {
         LocalCommitPublished(
           commitTx = commitTx,
           claimMainDelayedOutputTx = claimMainDelayedOutputTx_opt.map(TxGenerationResult.Success(_)).getOrElse(TxGenerationResult.BackwardCompatFailure),
-          htlcTxs = htlcTxs.view.mapValues {
-            case Some(txInfo) => LocalCommitPublished.HtlcOutputStatus.Spendable(TxGenerationResult.Success(txInfo))
-            case None => LocalCommitPublished.HtlcOutputStatus.PendingDownstreamSettlement
-          }.toMap,
+          htlcSuccessTxs = htlcTxs.collect { case (outPoint, Some(htlcSuccess: HtlcSuccessTx)) => (outPoint, LocalCommitPublished.HtlcOutputStatus.Spendable(TxGenerationResult.Success(htlcSuccess))) },
+          htlcTimeoutTxs = htlcTxs.collect { case (outPoint, Some(htlcTimeout: HtlcTimeoutTx)) => (outPoint, TxGenerationResult.Success(htlcTimeout)) },
           claimHtlcDelayedTxs = claimHtlcDelayedTxs.map(TxGenerationResult.Success(_)),
           claimAnchorTxs = claimAnchorTxs.map(TxGenerationResult.Success(_)),
           irrevocablySpent = irrevocablySpent)

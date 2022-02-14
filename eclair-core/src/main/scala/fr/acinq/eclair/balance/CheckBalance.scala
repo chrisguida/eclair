@@ -112,12 +112,12 @@ object CheckBalance {
     import l._
     val toLocal = localCommitPublished.claimMainDelayedOutputTx.toOption.map(c => c.tx.txid -> c.tx.txOut.head.amount.toBtc).toMap
     // incoming htlcs for which we have a preimage and the to-local delay has expired: we have published a claim tx that pays directly to our wallet
-    val htlcsInOnChain = localCommitPublished.htlcTxs.values.collect { case LocalCommitPublished.HtlcOutputStatus.Spendable(TxGenerationResult.Success(htlcTx: HtlcSuccessTx)) => htlcTx }
+    val htlcsInOnChain = localCommitPublished.htlcSuccessTxs.values.collect { case LocalCommitPublished.HtlcOutputStatus.Spendable(TxGenerationResult.Success(htlcTx)) => htlcTx }
       .filter(htlcTx => localCommitPublished.claimHtlcDelayedTxs.flatMap(_.toOption).exists(_.input.outPoint.txid == htlcTx.tx.txid))
       .map(_.htlcId)
       .toSet
     // outgoing htlcs that have timed out and the to-local delay has expired: we have published a claim tx that pays directly to our wallet
-    val htlcsOutOnChain = localCommitPublished.htlcTxs.values.collect { case LocalCommitPublished.HtlcOutputStatus.Spendable(TxGenerationResult.Success(htlcTx: HtlcTimeoutTx)) => htlcTx }
+    val htlcsOutOnChain = localCommitPublished.htlcTimeoutTxs.values.flatMap(_.toOption)
       .filter(htlcTx => localCommitPublished.claimHtlcDelayedTxs.flatMap(_.toOption).exists(_.input.outPoint.txid == htlcTx.tx.txid))
       .map(_.htlcId)
       .toSet

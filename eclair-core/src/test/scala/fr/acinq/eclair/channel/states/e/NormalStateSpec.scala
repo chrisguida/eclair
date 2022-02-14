@@ -3262,7 +3262,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.isDefined)
     val localCommitPublished = alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get
     assert(localCommitPublished.commitTx.txid == aliceCommitTx.txid)
-    assert(localCommitPublished.htlcTxs.size === 4)
+    assert(localCommitPublished.htlcSuccessTxs.size === 2)
+    assert(localCommitPublished.htlcTimeoutTxs.size === 2)
     assert(getHtlcSuccessTxs(localCommitPublished).length === 1)
     assert(getHtlcTimeoutTxs(localCommitPublished).length === 2)
     assert(localCommitPublished.claimHtlcDelayedTxs.isEmpty)
@@ -3339,7 +3340,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
       alice2blockchain.expectMsgType[WatchOutputSpent], // local anchor
     ).map(w => OutPoint(w.txId.reverse, w.outputIndex)).toSet
     val localCommitPublished = alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get
-    assert(watchedOutputs === localCommitPublished.htlcTxs.keySet + localAnchor.txInfo.input.outPoint)
+    assert(watchedOutputs === localCommitPublished.htlcSuccessTxs.keySet ++ localCommitPublished.htlcTimeoutTxs.keySet + localAnchor.txInfo.input.outPoint)
     alice2blockchain.expectNoMessage(1 second)
   }
 

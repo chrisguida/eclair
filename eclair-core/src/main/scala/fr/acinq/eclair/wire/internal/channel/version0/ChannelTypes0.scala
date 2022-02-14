@@ -57,15 +57,20 @@ private[channel] object ChannelTypes0 {
       // the channel will put a watch at start-up which will make us fetch the spending transaction.
       val irrevocablySpentNew = irrevocablySpent.collect { case (outpoint, txid) if knownTxs.contains(txid) => (outpoint, knownTxs(txid)) }
       val claimMainDelayedOutputTxNew = claimMainDelayedOutputTx.map(tx => ClaimLocalDelayedOutputTx(getPartialInputInfo(commitTx, tx), tx)).map(TxGenerationResult.Success(_)).getOrElse(TxGenerationResult.BackwardCompatFailure)
-      val htlcSuccessTxsNew = htlcSuccessTxs.map(tx => HtlcSuccessTx(getPartialInputInfo(commitTx, tx), tx, ByteVector32.Zeroes, 0, BlockHeight(0)))
-      val htlcTimeoutTxsNew = htlcTimeoutTxs.map(tx => HtlcTimeoutTx(getPartialInputInfo(commitTx, tx), tx, 0, BlockHeight(0)))
-      val htlcTxsNew = (htlcSuccessTxsNew ++ htlcTimeoutTxsNew).map(tx => tx.input.outPoint -> channel.LocalCommitPublished.HtlcOutputStatus.Spendable(TxGenerationResult.Success(tx))).toMap
+      val htlcSuccessTxsNew = htlcSuccessTxs
+        .map(tx => HtlcSuccessTx(getPartialInputInfo(commitTx, tx), tx, ByteVector32.Zeroes, 0, BlockHeight(0)))
+        .map(htlcSuccess => htlcSuccess.input.outPoint -> channel.LocalCommitPublished.HtlcOutputStatus.Spendable(TxGenerationResult.Success(htlcSuccess)))
+        .toMap
+      val htlcTimeoutTxsNew = htlcTimeoutTxs
+        .map(tx => HtlcTimeoutTx(getPartialInputInfo(commitTx, tx), tx, 0, BlockHeight(0)))
+        .map(htlcTimeout => htlcTimeout.input.outPoint -> TxGenerationResult.Success(htlcTimeout))
+        .toMap
       val claimHtlcDelayedTxsNew = claimHtlcDelayedTxs.map(tx => {
         val htlcTx = htlcTxs.find(_.txid == tx.txIn.head.outPoint.txid)
         require(htlcTx.nonEmpty, s"3rd-stage htlc tx doesn't spend one of our htlc txs: claim-htlc-tx=$tx, htlc-txs=${htlcTxs.mkString(",")}")
         HtlcDelayedTx(getPartialInputInfo(htlcTx.get, tx), tx)
       }).map(TxGenerationResult.Success(_))
-      channel.LocalCommitPublished(commitTx, claimMainDelayedOutputTxNew, htlcTxsNew, claimHtlcDelayedTxsNew, Nil, irrevocablySpentNew)
+      channel.LocalCommitPublished(commitTx, claimMainDelayedOutputTxNew, htlcSuccessTxsNew, htlcTimeoutTxsNew, claimHtlcDelayedTxsNew, Nil, irrevocablySpentNew)
     }
   }
 

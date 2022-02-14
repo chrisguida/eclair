@@ -2490,12 +2490,14 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
     val isFunder = commitments.localParams.isFunder
     val publishQueue = commitments.commitmentFormat match {
       case Transactions.DefaultCommitmentFormat =>
-        val redeemableHtlcTxs = htlcTxs.values.collect { case LocalCommitPublished.HtlcOutputStatus.Spendable(TxGenerationResult.Success(tx)) => PublishFinalTx(tx, tx.fee, Some(commitTx.txid)) }
-        List(PublishFinalTx(commitTx, commitInput, "CommitTx", Closing.commitTxFee(commitments.commitInput, commitTx, isFunder), None)) ++ (claimMainDelayedOutputTx.toOption.map(tx => PublishFinalTx(tx, tx.fee, None)) ++ redeemableHtlcTxs ++ claimHtlcDelayedTxs.flatMap(_.toOption).map(tx => PublishFinalTx(tx, tx.fee, None)))
+        val redeemableHtlcSuccessTxs = htlcSuccessTxs.values.collect { case LocalCommitPublished.HtlcOutputStatus.Spendable(TxGenerationResult.Success(tx)) => PublishFinalTx(tx, tx.fee, Some(commitTx.txid)) }
+        val redeemableHtlcTimeoutTxs = htlcTimeoutTxs.values.flatMap(_.toOption).map(tx => PublishFinalTx(tx, tx.fee, Some(commitTx.txid)))
+        List(PublishFinalTx(commitTx, commitInput, "CommitTx", Closing.commitTxFee(commitments.commitInput, commitTx, isFunder), None)) ++ (claimMainDelayedOutputTx.toOption.map(tx => PublishFinalTx(tx, tx.fee, None)) ++ redeemableHtlcSuccessTxs ++ redeemableHtlcTimeoutTxs ++ claimHtlcDelayedTxs.flatMap(_.toOption).map(tx => PublishFinalTx(tx, tx.fee, None)))
       case _: Transactions.AnchorOutputsCommitmentFormat =>
-        val redeemableHtlcTxs = htlcTxs.values.collect { case LocalCommitPublished.HtlcOutputStatus.Spendable(TxGenerationResult.Success(tx)) => PublishReplaceableTx(tx, commitments) }
+        val redeemableHtlcSuccessTxs = htlcSuccessTxs.values.collect { case LocalCommitPublished.HtlcOutputStatus.Spendable(TxGenerationResult.Success(tx)) => PublishReplaceableTx(tx, commitments) }
+        val redeemableHtlcTimeoutTxs = htlcTimeoutTxs.values.flatMap(_.toOption).map(tx => PublishReplaceableTx(tx, commitments))
         val claimLocalAnchor = claimAnchorTxs.collect { case TxGenerationResult.Success(tx: Transactions.ClaimLocalAnchorOutputTx) => PublishReplaceableTx(tx, commitments) }
-        List(PublishFinalTx(commitTx, commitInput, "CommitTx", Closing.commitTxFee(commitments.commitInput, commitTx, isFunder), None)) ++ claimLocalAnchor ++ claimMainDelayedOutputTx.toOption.map(tx => PublishFinalTx(tx, tx.fee, None)) ++ redeemableHtlcTxs ++ claimHtlcDelayedTxs.flatMap(_.toOption).map(tx => PublishFinalTx(tx, tx.fee, None))
+        List(PublishFinalTx(commitTx, commitInput, "CommitTx", Closing.commitTxFee(commitments.commitInput, commitTx, isFunder), None)) ++ claimLocalAnchor ++ claimMainDelayedOutputTx.toOption.map(tx => PublishFinalTx(tx, tx.fee, None)) ++ redeemableHtlcSuccessTxs ++ redeemableHtlcTimeoutTxs ++ claimHtlcDelayedTxs.flatMap(_.toOption).map(tx => PublishFinalTx(tx, tx.fee, None))
     }
     publishIfNeeded(publishQueue, irrevocablySpent)
 
@@ -2508,7 +2510,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
     // we watch outputs of the commitment tx that both parties may spend
     // we also watch our local anchor: this ensures that we will correctly detect when it's confirmed and count its fees
     // in the audit DB, even if we restart before confirmation
-    val watchSpentQueue = htlcTxs.keys ++ claimAnchorTxs.collect { case TxGenerationResult.Success(tx: Transactions.ClaimLocalAnchorOutputTx) => tx.input.outPoint }
+    val watchSpentQueue = htlcSuccessTxs.keys ++ htlcTimeoutTxs.keys ++ claimAnchorTxs.collect { case TxGenerationResult.Success(tx: Transactions.ClaimLocalAnchorOutputTx) => tx.input.outPoint }
     watchSpentIfNeeded(commitTx, watchSpentQueue, irrevocablySpent)
   }
 

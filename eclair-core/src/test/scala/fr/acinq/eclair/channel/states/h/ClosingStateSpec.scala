@@ -379,7 +379,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // actual test starts here
     assert(closingState.claimMainDelayedOutputTx.toOption.isDefined)
-    assert(closingState.htlcTxs.size === 1)
+    assert(closingState.htlcTimeoutTxs.size === 1)
     assert(getHtlcSuccessTxs(closingState).isEmpty)
     assert(getHtlcTimeoutTxs(closingState).length === 1)
     val htlcTimeoutTx = getHtlcTimeoutTxs(closingState).head.tx
@@ -434,7 +434,8 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // actual test starts here
     assert(closingState.claimMainDelayedOutputTx.toOption.isDefined)
-    assert(closingState.htlcTxs.size === 4)
+    assert(closingState.htlcSuccessTxs.size === 0)
+    assert(closingState.htlcTimeoutTxs.size === 4)
     assert(getHtlcSuccessTxs(closingState).isEmpty)
     val htlcTimeoutTxs = getHtlcTimeoutTxs(closingState).map(_.tx)
     assert(htlcTimeoutTxs.length === 4)
@@ -484,7 +485,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // actual test starts here
     channelUpdateListener.expectMsgType[LocalChannelDown]
-    assert(closingState.htlcTxs.isEmpty && closingState.claimHtlcDelayedTxs.isEmpty)
+    assert(closingState.htlcSuccessTxs.isEmpty && closingState.htlcTimeoutTxs.isEmpty && closingState.claimHtlcDelayedTxs.isEmpty)
     // when the commit tx is confirmed, alice knows that the htlc she sent right before the unilateral close will never reach the chain
     alice ! WatchTxConfirmedTriggered(BlockHeight(0), 0, aliceCommitTx)
     // so she fails it
@@ -539,7 +540,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // actual test starts here
     channelUpdateListener.expectMsgType[LocalChannelDown]
-    assert(closingState.htlcTxs.isEmpty && closingState.claimHtlcDelayedTxs.isEmpty)
+    assert(closingState.htlcSuccessTxs.isEmpty && closingState.htlcTimeoutTxs.isEmpty && closingState.claimHtlcDelayedTxs.isEmpty)
     // when the commit tx is confirmed, alice knows that the htlc will never reach the chain
     alice ! WatchTxConfirmedTriggered(BlockHeight(0), 0, closingState.commitTx)
     // so she fails it

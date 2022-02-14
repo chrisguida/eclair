@@ -294,7 +294,8 @@ sealed trait CommitPublished {
  */
 case class LocalCommitPublished(commitTx: Transaction,
                                 claimMainDelayedOutputTx: TxGenerationResult[ClaimLocalDelayedOutputTx],
-                                htlcTxs: Map[OutPoint, LocalCommitPublished.HtlcOutputStatus],
+                                htlcSuccessTxs: Map[OutPoint, LocalCommitPublished.HtlcOutputStatus],
+                                htlcTimeoutTxs: Map[OutPoint, TxGenerationResult[HtlcTimeoutTx]],
                                 claimHtlcDelayedTxs: List[TxGenerationResult[HtlcDelayedTx]],
                                 claimAnchorTxs: List[TxGenerationResult[ClaimAnchorOutputTx]],
                                 irrevocablySpent: Map[OutPoint, Transaction]) extends CommitPublished {
@@ -310,11 +311,11 @@ case class LocalCommitPublished(commitTx: Transaction,
     // is our main output confirmed (if we have one)?
     val isMainOutputConfirmed = claimMainDelayedOutputTx.isDone(irrevocablySpent)
     // are all htlc outputs from the commitment tx spent (we need to check them all because we may receive preimages later)?
-    val allHtlcsSpent = htlcTxs.forall {
+    val allHtlcsSpent = htlcSuccessTxs.forall {
       case (_, LocalCommitPublished.HtlcOutputStatus.Spendable(txGen)) => txGen.isDone(irrevocablySpent)
       case (outPoint, LocalCommitPublished.HtlcOutputStatus.PendingDownstreamSettlement) => irrevocablySpent.contains(outPoint) // our counterparty may have spent it
       case (_, LocalCommitPublished.HtlcOutputStatus.Unspendable) => true // we will never be able to spend this output so we ignore it (our counterparty may forget to spend it and cause us to wait forever)
-    }
+    } && htlcTimeoutTxs.forall(_._2.isDone(irrevocablySpent))
     // are all outputs from htlc txs spent?
     val allHtlcDelayedTxsSpent = claimHtlcDelayedTxs
       // only the txs which parents are already confirmed may get confirmed (note that this eliminates outputs that have been double-spent by a competing tx)
@@ -332,7 +333,7 @@ object LocalCommitPublished {
   sealed trait HtlcOutputStatus
   object HtlcOutputStatus {
     /** We know how to spend this output */
-    case class Spendable(generationResult: TxGenerationResult[HtlcTx]) extends HtlcOutputStatus
+    case class Spendable(generationResult: TxGenerationResult[HtlcSuccessTx]) extends HtlcOutputStatus
     /** We may be able to spend incoming htlcs outputs if we get the preimage from the next node */
     case object PendingDownstreamSettlement extends HtlcOutputStatus
     /** We know for sure that we will never be able to spend this incoming htlc output, because we got a failure from the next node in the route*/

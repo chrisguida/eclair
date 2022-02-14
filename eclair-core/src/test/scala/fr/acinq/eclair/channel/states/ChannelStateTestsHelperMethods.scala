@@ -384,14 +384,15 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
     }
     // if s has a main output in the commit tx (when it has a non-dust balance), it should be claimed
     localCommitPublished.claimMainDelayedOutputTx.toOption.foreach(tx => s2blockchain.expectMsg(TxPublisher.PublishFinalTx(tx, tx.fee, None)))
+    val htlcTxs = localCommitPublished.htlcSuccessTxs.values.collect { case LocalCommitPublished.HtlcOutputStatus.Spendable(txGen) => txGen.toOption }.flatten ++
+      localCommitPublished.htlcTimeoutTxs.values.flatMap(_.toOption)
     closingState.commitments.commitmentFormat match {
       case Transactions.DefaultCommitmentFormat =>
         // all htlcs success/timeout should be published as-is, without claiming their outputs
-        s2blockchain.expectMsgAllOf(localCommitPublished.htlcTxs.values.toSeq.collect { case LocalCommitPublished.HtlcOutputStatus.Spendable(TxGenerationResult.Success(tx)) => TxPublisher.PublishFinalTx(tx, tx.fee, Some(commitTx.txid)) }: _*)
+        s2blockchain.expectMsgAllOf(htlcTxs.map(tx => TxPublisher.PublishFinalTx(tx, tx.fee, Some(commitTx.txid))).toSeq: _*)
         assert(localCommitPublished.claimHtlcDelayedTxs.isEmpty)
       case _: Transactions.AnchorOutputsCommitmentFormat =>
         // all htlcs success/timeout should be published as replaceable txs, without claiming their outputs
-        val htlcTxs = localCommitPublished.htlcTxs.values.collect { case LocalCommitPublished.HtlcOutputStatus.Spendable(TxGenerationResult.Success(tx: HtlcTx)) => tx }
         val publishedTxs = htlcTxs.map(_ => s2blockchain.expectMsgType[TxPublisher.PublishReplaceableTx])
         assert(publishedTxs.map(_.input).toSet == htlcTxs.map(_.input.outPoint).toSet)
         assert(localCommitPublished.claimHtlcDelayedTxs.isEmpty)
@@ -402,7 +403,7 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
     localCommitPublished.claimMainDelayedOutputTx.toOption.foreach(claimMain => assert(s2blockchain.expectMsgType[WatchTxConfirmed].txId === claimMain.tx.txid))
 
     // we watch outputs of the commitment tx that both parties may spend and anchor outputs
-    val watchedOutputIndexes = localCommitPublished.htlcTxs.keySet.map(_.index) ++ localCommitPublished.claimAnchorTxs.collect { case TxGenerationResult.Success(tx: ClaimLocalAnchorOutputTx) => tx.input.outPoint.index }
+    val watchedOutputIndexes = localCommitPublished.htlcSuccessTxs.keySet.map(_.index) ++ localCommitPublished.htlcTimeoutTxs.keySet.map(_.index) ++ localCommitPublished.claimAnchorTxs.collect { case TxGenerationResult.Success(tx: ClaimLocalAnchorOutputTx) => tx.input.outPoint.index }
     val spentWatches = watchedOutputIndexes.map(_ => s2blockchain.expectMsgType[WatchOutputSpent])
     spentWatches.foreach(ws => assert(ws.txId == commitTx.txid))
     assert(spentWatches.map(_.outputIndex) == watchedOutputIndexes)
@@ -450,9 +451,9 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
 
   def channelId(a: TestFSMRef[ChannelState, ChannelData, Channel]): ByteVector32 = a.stateData.channelId
 
-  def getHtlcSuccessTxs(lcp: LocalCommitPublished): Seq[HtlcSuccessTx] = lcp.htlcTxs.values.collect { case LocalCommitPublished.HtlcOutputStatus.Spendable(TxGenerationResult.Success(tx: HtlcSuccessTx)) => tx }.toSeq
+  def getHtlcSuccessTxs(lcp: LocalCommitPublished): Seq[HtlcSuccessTx] = lcp.htlcSuccessTxs.values.collect { case LocalCommitPublished.HtlcOutputStatus.Spendable(TxGenerationResult.Success(tx: HtlcSuccessTx)) => tx }.toSeq
 
-  def getHtlcTimeoutTxs(lcp: LocalCommitPublished): Seq[HtlcTimeoutTx] = lcp.htlcTxs.values.collect { case LocalCommitPublished.HtlcOutputStatus.Spendable(TxGenerationResult.Success(tx: HtlcTimeoutTx)) => tx }.toSeq
+  def getHtlcTimeoutTxs(lcp: LocalCommitPublished): Seq[HtlcTimeoutTx] = lcp.htlcTimeoutTxs.values.flatMap(_.toOption).toSeq
 
   def getClaimHtlcSuccessTxs(rcp: RemoteCommitPublished): Seq[ClaimHtlcSuccessTx] = rcp.claimHtlcTxs.values.collect { case RemoteCommitPublished.HtlcOutputStatus.Spendable(TxGenerationResult.Success(tx: ClaimHtlcSuccessTx)) => tx }.toSeq
 

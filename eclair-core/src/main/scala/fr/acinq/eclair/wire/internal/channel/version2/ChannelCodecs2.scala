@@ -253,10 +253,12 @@ private[channel] object ChannelCodecs2 {
         LocalCommitPublished(
           commitTx = commitTx,
           claimMainDelayedOutputTx = claimMainDelayedOutputTx_opt.map(TxGenerationResult.Success(_)).getOrElse(TxGenerationResult.BackwardCompatFailure),
-          htlcTxs = htlcTxs.view.mapValues {
-            case Some(txInfo) => LocalCommitPublished.HtlcOutputStatus.Spendable(TxGenerationResult.Success(txInfo))
-            case None => LocalCommitPublished.HtlcOutputStatus.PendingDownstreamSettlement
-          }.toMap,
+          htlcSuccessTxs = htlcTxs.collect {
+            case (outPoint, Some(htlcSuccess: HtlcSuccessTx)) => outPoint -> LocalCommitPublished.HtlcOutputStatus.Spendable(TxGenerationResult.Success(htlcSuccess))
+          },
+          htlcTimeoutTxs = htlcTxs.collect {
+            case (outPoint, Some(htlcTimeout: HtlcTimeoutTx)) => outPoint -> TxGenerationResult.Success(htlcTimeout)
+          },
           claimHtlcDelayedTxs = claimHtlcDelayedTxs.map(TxGenerationResult.Success(_)),
           claimAnchorTxs = claimAnchorTxs.map(TxGenerationResult.Success(_)),
           irrevocablySpent = irrevocablySpent)

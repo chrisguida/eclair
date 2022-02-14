@@ -876,7 +876,8 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     awaitCond(alice.stateName == CLOSING)
     assert(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.isDefined)
     val lcp = alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get
-    assert(lcp.htlcTxs.size === 2)
+    assert(lcp.htlcSuccessTxs.size === 0)
+    assert(lcp.htlcTimeoutTxs.size === 2)
     assert(lcp.claimHtlcDelayedTxs.isEmpty) // 3rd-stage txs will be published once htlc txs confirm
 
     val claimMain = alice2blockchain.expectMsgType[PublishFinalTx].tx

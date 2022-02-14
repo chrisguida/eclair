@@ -33,7 +33,7 @@ import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.DirectedHtlc._
 import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.transactions.Transactions._
-import fr.acinq.eclair.transactions._
+import fr.acinq.eclair.transactions.{Transactions, _}
 import fr.acinq.eclair.wire.protocol._
 import scodec.bits.ByteVector
 
@@ -664,7 +664,7 @@ object Helpers {
         case u: UpdateFailMalformedHtlc => u.id
       }.toSet
 
-      val htlcTxs: Map[OutPoint, LocalCommitPublished.HtlcOutputStatus] = localCommit.htlcTxsAndRemoteSigs.collect {
+      val htlcSuccessTxs: Map[OutPoint, LocalCommitPublished.HtlcOutputStatus] = localCommit.htlcTxsAndRemoteSigs.collect {
         case HtlcTxAndRemoteSig(txInfo@HtlcSuccessTx(_, _, paymentHash, _, _), remoteSig) =>
           if (preimages.contains(paymentHash)) {
             // incoming htlc for which we have the preimage: we can spend it immediately
@@ -680,16 +680,20 @@ object Helpers {
             // preimage later, otherwise it will eventually timeout and they will get their funds back
             txInfo.input.outPoint -> LocalCommitPublished.HtlcOutputStatus.PendingDownstreamSettlement
           }
+      }.toMap
+
+      val htlcTimeoutTxs: Map[OutPoint, TxGenerationResult[HtlcTimeoutTx]] = localCommit.htlcTxsAndRemoteSigs.collect {
         case HtlcTxAndRemoteSig(txInfo: HtlcTimeoutTx, remoteSig) =>
           // outgoing htlc: they may or may not have the preimage, the only thing to do is try to get back our funds after timeout
-          txInfo.input.outPoint -> LocalCommitPublished.HtlcOutputStatus.Spendable(withTxGenerationLog {
+          txInfo.input.outPoint -> withTxGenerationLog {
             val localSig = keyManager.sign(txInfo, keyManager.htlcPoint(channelKeyPath), localPerCommitmentPoint, TxOwner.Local, commitmentFormat)
             TxGenerationResult.Success(Transactions.addSigs(txInfo, localSig, remoteSig, commitmentFormat))
-          })
+          }
       }.toMap
 
       // If we don't have pending HTLCs, we don't have funds at risk, so we can aim for a slower confirmation.
-      val confirmCommitBefore = htlcTxs.values.collect { case LocalCommitPublished.HtlcOutputStatus.Spendable(TxGenerationResult.Success(htlcTx)) => htlcTx.confirmBefore }.minOption.getOrElse(currentBlockHeight + feeTargets.commitmentWithoutHtlcsBlockTarget)
+      val confirmCommitBefore = (htlcSuccessTxs.values.collect { case LocalCommitPublished.HtlcOutputStatus.Spendable(TxGenerationResult.Success(htlcTx)) => htlcTx.confirmBefore } ++ htlcTimeoutTxs.values.flatMap(_.toOption).map(_.confirmBefore))
+        .minOption.getOrElse(currentBlockHeight + feeTargets.commitmentWithoutHtlcsBlockTarget)
       val claimAnchorTxs: List[TxGenerationResult[ClaimAnchorOutputTx]] = List(
         withTxGenerationLog {
           Transactions.makeClaimLocalAnchorOutputTx(tx, localFundingPubKey, confirmCommitBefore)
@@ -702,7 +706,8 @@ object Helpers {
       LocalCommitPublished(
         commitTx = tx,
         claimMainDelayedOutputTx = mainDelayedTx,
-        htlcTxs = htlcTxs,
+        htlcSuccessTxs = htlcSuccessTxs,
+        htlcTimeoutTxs = htlcTimeoutTxs,
         claimHtlcDelayedTxs = Nil, // we will claim these once the htlc txs are confirmed
         claimAnchorTxs = claimAnchorTxs,
         irrevocablySpent = Map.empty)
@@ -1055,14 +1060,14 @@ object Helpers {
     }
 
     def isHtlcTimeout(tx: Transaction, localCommitPublished: LocalCommitPublished): Boolean = {
-      tx.txIn.filter(txIn => localCommitPublished.htlcTxs.get(txIn.outPoint) match {
-        case Some(LocalCommitPublished.HtlcOutputStatus.Spendable(TxGenerationResult.Success(_: HtlcTimeoutTx))) => true
+      tx.txIn.filter(txIn => localCommitPublished.htlcTimeoutTxs.get(txIn.outPoint) match {
+        case Some(TxGenerationResult.Success(_: HtlcTimeoutTx)) => true
         case _ => false
       }).map(_.witness).collect(Scripts.extractPaymentHashFromHtlcTimeout).nonEmpty
     }
 
     def isHtlcSuccess(tx: Transaction, localCommitPublished: LocalCommitPublished): Boolean = {
-      tx.txIn.filter(txIn => localCommitPublished.htlcTxs.get(txIn.outPoint) match {
+      tx.txIn.filter(txIn => localCommitPublished.htlcSuccessTxs.get(txIn.outPoint) match {
         case Some(LocalCommitPublished.HtlcOutputStatus.Spendable(TxGenerationResult.Success(_: HtlcSuccessTx))) => true
         case _ => false
       }).map(_.witness).collect(Scripts.extractPreimageFromHtlcSuccess).nonEmpty
@@ -1132,19 +1137,19 @@ object Helpers {
         localCommit.spec.htlcs.collect(outgoing) -- untrimmedHtlcs
       } else {
         // maybe this is a timeout tx, in that case we can resolve and fail the corresponding htlc
-        val isMissingHtlcIndex = localCommitPublished.htlcTxs.values.collect { case LocalCommitPublished.HtlcOutputStatus.Spendable(TxGenerationResult.Success(HtlcTimeoutTx(_, _, htlcId, _))) => htlcId }.toSet == Set(0)
+        val isMissingHtlcIndex = localCommitPublished.htlcTimeoutTxs.values.flatMap(_.toOption).map(_.htlcId).toSet == Set(0)
         if (isMissingHtlcIndex && commitmentFormat == DefaultCommitmentFormat) {
           tx.txIn
             .map(_.witness)
             .collect(Scripts.extractPaymentHashFromHtlcTimeout)
             .flatMap { paymentHash160 =>
               log.info(s"HtlcTimeoutTx tx for paymentHash160=${paymentHash160.toHex} expiry=${tx.lockTime} has been confirmed (tx=$tx)")
-              val timeoutTxs = localCommitPublished.htlcTxs.values.collect { case LocalCommitPublished.HtlcOutputStatus.Spendable(TxGenerationResult.Success(HtlcTimeoutTx(_, tx, _, _))) => tx }.toSeq
+              val timeoutTxs = localCommitPublished.htlcTimeoutTxs.values.flatMap(_.toOption).map(_.tx).toSeq
               findTimedOutHtlc(tx, paymentHash160, untrimmedHtlcs, timeoutTxs, Scripts.extractPaymentHashFromHtlcTimeout)
             }.toSet
         } else {
-          tx.txIn.flatMap(txIn => localCommitPublished.htlcTxs.get(txIn.outPoint) match {
-            case Some(LocalCommitPublished.HtlcOutputStatus.Spendable(TxGenerationResult.Success(HtlcTimeoutTx(_, _, htlcId, _)))) if isHtlcTimeout(tx, localCommitPublished) =>
+          tx.txIn.flatMap(txIn => localCommitPublished.htlcTimeoutTxs.get(txIn.outPoint) match {
+            case Some(TxGenerationResult.Success(HtlcTimeoutTx(_, _, htlcId, _))) if isHtlcTimeout(tx, localCommitPublished) =>
               untrimmedHtlcs.find(_.id == htlcId) match {
                 case Some(htlc) =>
                   log.info(s"HtlcTimeoutTx tx for htlc #$htlcId paymentHash=${htlc.paymentHash} expiry=${tx.lockTime} has been confirmed (tx=$tx)")

@@ -308,19 +308,26 @@ class JsonSerializersSpec extends AnyFunSuite with Matchers {
 
     val dummyInputInfo = InputInfo(OutPoint(ByteVector32.Zeroes, 0), TxOut(Satoshi(0), Nil), Nil)
 
-    val htlcSuccessTx = Transaction.read("0200000001c8a8934fb38a44b969528252bc37be66ee166c7897c57384d1e561449e110c93010000006b483045022100dc6c50f445ed53d2fb41067fdcb25686fe79492d90e6e5db43235726ace247210220773d35228af0800c257970bee9cf75175d75217de09a8ecd83521befd040c4ca012102082b751372fe7e3b012534afe0bb8d1f2f09c724b1a10a813ce704e5b9c217ccfdffffff0247ba2300000000001976a914f97a7641228e6b17d4b0b08252ae75bd62a95fe788ace3de24000000000017a914a9fefd4b9a9282a1d7a17d2f14ac7d1eb88141d287f7d50800")
-    val htlcSuccessTxInfo = HtlcSuccessTx(dummyInputInfo, htlcSuccessTx, ByteVector32.One, 3, BlockHeight(1105))
+    val tx = Transaction.read("0200000001c8a8934fb38a44b969528252bc37be66ee166c7897c57384d1e561449e110c93010000006b483045022100dc6c50f445ed53d2fb41067fdcb25686fe79492d90e6e5db43235726ace247210220773d35228af0800c257970bee9cf75175d75217de09a8ecd83521befd040c4ca012102082b751372fe7e3b012534afe0bb8d1f2f09c724b1a10a813ce704e5b9c217ccfdffffff0247ba2300000000001976a914f97a7641228e6b17d4b0b08252ae75bd62a95fe788ace3de24000000000017a914a9fefd4b9a9282a1d7a17d2f14ac7d1eb88141d287f7d50800")
+    val htlcSuccessTxInfo = HtlcSuccessTx(dummyInputInfo, tx, ByteVector32.One, 3, BlockHeight(1105))
+    val htlcTimeoutTxInfo = HtlcTimeoutTx(dummyInputInfo, tx, 3, BlockHeight(1105))
 
     val localCommitPublished = LocalCommitPublished(
       commitTx = Transaction.read("0100000001be43e9788523ed4de0b24a007a90009bc25e667ddac0e9ee83049be03e220138000000006b483045022100f74dd6ad3e6a00201d266a0ed860a6379c6e68b473970423f3fc8a15caa1ea0f022065b4852c9da230d9e036df743cb743601ca5229e1cb610efdd99769513f2a2260121020636de7755830fb4a3f136e97ecc6c58941611957ba0364f01beae164b945b2fffffffff0150f80c000000000017a9146809053148799a10480eada3d56d15edf4a648c88700000000"),
       claimMainDelayedOutputTx = TxGenerationResult.AmountBelowDustLimit,
-      htlcTxs = Map(
+      htlcSuccessTxs = Map(
         OutPoint(ByteVector32(hex"8e3ec6e16436b7dc61b86340192603d05f16d4f8e06c8aaa02fbe2ad63209af3"), 1) -> LocalCommitPublished.HtlcOutputStatus.Spendable(TxGenerationResult.Success(htlcSuccessTxInfo)),
         OutPoint(ByteVector32(hex"8e3ec6e16436b7dc61b86340192603d05f16d4f8e06c8aaa02fbe2ad63209af3"), 2) -> LocalCommitPublished.HtlcOutputStatus.Spendable(TxGenerationResult.AmountBelowDustLimit),
         OutPoint(ByteVector32(hex"8e3ec6e16436b7dc61b86340192603d05f16d4f8e06c8aaa02fbe2ad63209af3"), 3) -> LocalCommitPublished.HtlcOutputStatus.Spendable(TxGenerationResult.OutputNotFound),
         OutPoint(ByteVector32(hex"8e3ec6e16436b7dc61b86340192603d05f16d4f8e06c8aaa02fbe2ad63209af3"), 4) -> LocalCommitPublished.HtlcOutputStatus.Spendable(TxGenerationResult.Failure("signature failed")),
         OutPoint(ByteVector32(hex"8e3ec6e16436b7dc61b86340192603d05f16d4f8e06c8aaa02fbe2ad63209af3"), 5) -> LocalCommitPublished.HtlcOutputStatus.PendingDownstreamSettlement,
         OutPoint(ByteVector32(hex"8e3ec6e16436b7dc61b86340192603d05f16d4f8e06c8aaa02fbe2ad63209af3"), 6) -> LocalCommitPublished.HtlcOutputStatus.Unspendable,
+      ),
+      htlcTimeoutTxs = Map(
+        OutPoint(ByteVector32(hex"e2fc57221cfb1942224082174022f3f70a32005aa209956f9c94c6903f7669ff"), 1) -> TxGenerationResult.Success(htlcTimeoutTxInfo),
+        OutPoint(ByteVector32(hex"e2fc57221cfb1942224082174022f3f70a32005aa209956f9c94c6903f7669ff"), 2) -> TxGenerationResult.AmountBelowDustLimit,
+        OutPoint(ByteVector32(hex"e2fc57221cfb1942224082174022f3f70a32005aa209956f9c94c6903f7669ff"), 3) -> TxGenerationResult.OutputNotFound,
+        OutPoint(ByteVector32(hex"e2fc57221cfb1942224082174022f3f70a32005aa209956f9c94c6903f7669ff"), 4) -> TxGenerationResult.Failure("signature failed")
       ),
       claimHtlcDelayedTxs = List.empty,
       claimAnchorTxs = List.empty,

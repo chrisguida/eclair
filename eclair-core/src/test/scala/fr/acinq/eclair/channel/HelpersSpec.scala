@@ -97,7 +97,8 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
     awaitCond(bob.stateName == CLOSING)
 
     val lcp = alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get
-    assert(lcp.htlcTxs.size === 6)
+    assert(lcp.htlcSuccessTxs.size === 3)
+    assert(lcp.htlcTimeoutTxs.size === 3)
     val htlcTimeoutTxs = getHtlcTimeoutTxs(lcp)
     assert(htlcTimeoutTxs.length === 3)
     val htlcSuccessTxs = getHtlcSuccessTxs(lcp)
@@ -154,14 +155,16 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
     identifyHtlcs(setupHtlcs(Set(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)))
   }
 
-  private def removeHtlcId(htlcTx: HtlcTx): HtlcTx = htlcTx match {
-    case htlcTx: HtlcSuccessTx => htlcTx.copy(htlcId = 0)
-    case htlcTx: HtlcTimeoutTx => htlcTx.copy(htlcId = 0)
+  private def removeHtlcSuccessIds(htlcTxs: Map[OutPoint, LocalCommitPublished.HtlcOutputStatus]): Map[OutPoint, LocalCommitPublished.HtlcOutputStatus] = {
+    htlcTxs.map {
+      case (outpoint, LocalCommitPublished.HtlcOutputStatus.Spendable(TxGenerationResult.Success(htlcTx))) => (outpoint, LocalCommitPublished.HtlcOutputStatus.Spendable(TxGenerationResult.Success(htlcTx.copy(htlcId = 0))))
+      case (outpoint, otherStatus) => (outpoint, otherStatus)
+    }
   }
 
-  private def removeHtlcIds(htlcTxs: Map[OutPoint, LocalCommitPublished.HtlcOutputStatus]): Map[OutPoint, LocalCommitPublished.HtlcOutputStatus] = {
+  private def removeHtlcTimeoutIds(htlcTxs: Map[OutPoint, TxGenerationResult[HtlcTimeoutTx]]): Map[OutPoint, TxGenerationResult[HtlcTimeoutTx]] = {
     htlcTxs.map {
-      case (outpoint, LocalCommitPublished.HtlcOutputStatus.Spendable(TxGenerationResult.Success(htlcTx))) => (outpoint, LocalCommitPublished.HtlcOutputStatus.Spendable(TxGenerationResult.Success(removeHtlcId(htlcTx))))
+      case (outpoint, TxGenerationResult.Success(htlcTx)) => (outpoint, TxGenerationResult.Success(htlcTx.copy(htlcId = 0)))
       case (outpoint, otherStatus) => (outpoint, otherStatus)
     }
   }
@@ -189,7 +192,9 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
 
     // Channels without anchor outputs that were closing before eclair v0.6.0 will not have their htlcId set after the
     // update, but still need to be able to identify timed out htlcs.
-    val localCommitPublished = if (withoutHtlcId) aliceCommitPublished.copy(htlcTxs = removeHtlcIds(aliceCommitPublished.htlcTxs)) else aliceCommitPublished
+    val localCommitPublished = if (withoutHtlcId) aliceCommitPublished.copy(
+      htlcSuccessTxs = removeHtlcSuccessIds(aliceCommitPublished.htlcSuccessTxs),
+      htlcTimeoutTxs = removeHtlcTimeoutIds(aliceCommitPublished.htlcTimeoutTxs)) else aliceCommitPublished
     val remoteCommitPublished = if (withoutHtlcId) bobCommitPublished.copy(claimHtlcTxs = removeClaimHtlcIds(bobCommitPublished.claimHtlcTxs)) else bobCommitPublished
 
     val htlcTimeoutTxs = getHtlcTimeoutTxs(localCommitPublished)
@@ -310,7 +315,8 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         localCommitPublished = Some(LocalCommitPublished(
           commitTx = tx2.tx,
           claimMainDelayedOutputTx = TxGenerationResult.Success(ClaimLocalDelayedOutputTx(tx3.input, tx3.tx)),
-          htlcTxs = Map.empty,
+          htlcSuccessTxs = Map.empty,
+          htlcTimeoutTxs = Map.empty,
           claimHtlcDelayedTxs = Nil,
           claimAnchorTxs = Nil,
           irrevocablySpent = Map.empty
@@ -332,7 +338,8 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         localCommitPublished = Some(LocalCommitPublished(
           commitTx = tx2.tx,
           claimMainDelayedOutputTx = TxGenerationResult.Success(ClaimLocalDelayedOutputTx(tx3.input, tx3.tx)),
-          htlcTxs = Map.empty,
+          htlcSuccessTxs = Map.empty,
+          htlcTimeoutTxs = Map.empty,
           claimHtlcDelayedTxs = Nil,
           claimAnchorTxs = Nil,
           irrevocablySpent = Map(tx2.input.outPoint -> tx2.tx)
@@ -354,7 +361,8 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         localCommitPublished = Some(LocalCommitPublished(
           commitTx = tx2.tx,
           claimMainDelayedOutputTx = TxGenerationResult.Failure("dummy"),
-          htlcTxs = Map.empty,
+          htlcSuccessTxs = Map.empty,
+          htlcTimeoutTxs = Map.empty,
           claimHtlcDelayedTxs = Nil,
           claimAnchorTxs = Nil,
           irrevocablySpent = Map.empty
@@ -382,7 +390,8 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         localCommitPublished = Some(LocalCommitPublished(
           commitTx = tx2.tx,
           claimMainDelayedOutputTx = TxGenerationResult.Failure("dummy"),
-          htlcTxs = Map.empty,
+          htlcSuccessTxs = Map.empty,
+          htlcTimeoutTxs = Map.empty,
           claimHtlcDelayedTxs = Nil,
           claimAnchorTxs = Nil,
           irrevocablySpent = Map.empty
@@ -410,7 +419,8 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         localCommitPublished = Some(LocalCommitPublished(
           commitTx = tx2.tx,
           claimMainDelayedOutputTx = TxGenerationResult.Failure("dummy"),
-          htlcTxs = Map.empty,
+          htlcSuccessTxs = Map.empty,
+          htlcTimeoutTxs = Map.empty,
           claimHtlcDelayedTxs = Nil,
           claimAnchorTxs = Nil,
           irrevocablySpent = Map.empty
@@ -486,7 +496,8 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         localCommitPublished = Some(LocalCommitPublished(
           commitTx = tx1.tx,
           claimMainDelayedOutputTx = TxGenerationResult.Failure("dummy"),
-          htlcTxs = Map.empty,
+          htlcSuccessTxs = Map.empty,
+          htlcTimeoutTxs = Map.empty,
           claimHtlcDelayedTxs = Nil,
           claimAnchorTxs = Nil,
           irrevocablySpent = Map.empty
@@ -533,7 +544,8 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         localCommitPublished = Some(LocalCommitPublished(
           commitTx = tx1.tx,
           claimMainDelayedOutputTx = TxGenerationResult.Failure("dummy"),
-          htlcTxs = Map.empty,
+          htlcSuccessTxs = Map.empty,
+          htlcTimeoutTxs = Map.empty,
           claimHtlcDelayedTxs = Nil,
           claimAnchorTxs = Nil,
           irrevocablySpent = Map.empty
