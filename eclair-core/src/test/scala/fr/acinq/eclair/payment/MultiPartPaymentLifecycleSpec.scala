@@ -155,7 +155,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     router.expectMsgType[RouteRequest]
     router.send(payFsm, RouteResponse(Seq(Route(500000 msat, hop_ab_1 :: hop_be :: Nil), Route(501000 msat, hop_ac_1 :: hop_ce :: Nil))))
     val childPayments = childPayFsm.expectMsgType[SendPaymentToRoute] :: childPayFsm.expectMsgType[SendPaymentToRoute] :: Nil
-    childPayments.map(_.finalPayload.asInstanceOf[PaymentOnion.FinalTlvPayload]).foreach(p => {
+    childPayments.map(_.finalPayload).foreach(p => {
       assert(p.records.get[OnionPaymentPayloadTlv.TrampolineOnion] === Some(trampolineTlv))
       assert(p.records.unknown.toSeq === Seq(userCustomTlv))
     })

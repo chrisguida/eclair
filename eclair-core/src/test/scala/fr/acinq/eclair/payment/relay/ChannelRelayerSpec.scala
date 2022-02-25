@@ -30,7 +30,7 @@ import fr.acinq.eclair.payment.IncomingPaymentPacket.ChannelRelayPacket
 import fr.acinq.eclair.payment.relay.ChannelRelayer._
 import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPaymentPacket, PaymentPacketSpec}
 import fr.acinq.eclair.router.Announcements
-import fr.acinq.eclair.wire.protocol.PaymentOnion.{ChannelRelayPayload, ChannelRelayTlvPayload, RelayLegacyPayload}
+import fr.acinq.eclair.wire.protocol.PaymentOnion.ChannelRelayPayload
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiry, NodeParams, TestConstants, randomBytes32, _}
 import org.scalatest.Outcome
@@ -76,21 +76,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
   test("relay htlc-add") { f =>
     import f._
 
-    val payload = RelayLegacyPayload(shortId1, outgoingAmount, outgoingExpiry)
-    val r = createValidIncomingPacket(1100000 msat, CltvExpiry(400100), payload)
-    val u = createLocalUpdate(shortId1)
-
-    channelRelayer ! WrappedLocalChannelUpdate(u)
-    channelRelayer ! Relay(r)
-
-    expectFwdAdd(register, shortId1, outgoingAmount, outgoingExpiry)
-  }
-
-  test("relay an htlc-add with onion tlv payload") { f =>
-    import f._
-    import fr.acinq.eclair.wire.protocol.OnionPaymentPayloadTlv._
-
-    val payload = ChannelRelayTlvPayload(TlvStream[OnionPaymentPayloadTlv](AmountToForward(outgoingAmount), OutgoingCltv(outgoingExpiry), OutgoingChannelId(shortId1)))
+    val payload = ChannelRelayPayload(shortId1, outgoingAmount, outgoingExpiry)
     val r = createValidIncomingPacket(1100000 msat, CltvExpiry(400100), payload)
     val u = createLocalUpdate(shortId1)
 
@@ -103,7 +89,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
   test("relay an htlc-add with retries") { f =>
     import f._
 
-    val payload = RelayLegacyPayload(shortId1, outgoingAmount, outgoingExpiry)
+    val payload = ChannelRelayPayload(shortId1, outgoingAmount, outgoingExpiry)
     val r = createValidIncomingPacket(1100000 msat, CltvExpiry(400100), payload)
 
     // we tell the relayer about the first channel
@@ -133,7 +119,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
   test("fail to relay an htlc-add when we have no channel_update for the next channel") { f =>
     import f._
 
-    val payload = RelayLegacyPayload(shortId1, outgoingAmount, outgoingExpiry)
+    val payload = ChannelRelayPayload(shortId1, outgoingAmount, outgoingExpiry)
     val r = createValidIncomingPacket(1100000 msat, CltvExpiry(400100), payload)
 
     channelRelayer ! Relay(r)
@@ -144,7 +130,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
   test("fail to relay an htlc-add when register returns an error") { f =>
     import f._
 
-    val payload = RelayLegacyPayload(shortId1, outgoingAmount, outgoingExpiry)
+    val payload = ChannelRelayPayload(shortId1, outgoingAmount, outgoingExpiry)
     val r = createValidIncomingPacket(1100000 msat, CltvExpiry(400100), payload)
     val u = createLocalUpdate(shortId1)
 
@@ -160,7 +146,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
   test("fail to relay an htlc-add when the channel is advertised as unusable (down)") { f =>
     import f._
 
-    val payload = RelayLegacyPayload(shortId1, outgoingAmount, outgoingExpiry)
+    val payload = ChannelRelayPayload(shortId1, outgoingAmount, outgoingExpiry)
     val r = createValidIncomingPacket(1100000 msat, CltvExpiry(400100), payload)
     val u = createLocalUpdate(shortId1)
     val d = LocalChannelDown(null, channelId = channelIds(shortId1), shortId1, outgoingNodeId)
@@ -175,7 +161,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
   test("fail to relay an htlc-add (channel disabled)") { f =>
     import f._
 
-    val payload = RelayLegacyPayload(shortId1, outgoingAmount, outgoingExpiry)
+    val payload = ChannelRelayPayload(shortId1, outgoingAmount, outgoingExpiry)
     val r = createValidIncomingPacket(1100000 msat, CltvExpiry(400100), payload)
     val u = createLocalUpdate(shortId1, enabled = false)
 
@@ -188,7 +174,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
   test("fail to relay an htlc-add (amount below minimum)") { f =>
     import f._
 
-    val payload = RelayLegacyPayload(shortId1, outgoingAmount, outgoingExpiry)
+    val payload = ChannelRelayPayload(shortId1, outgoingAmount, outgoingExpiry)
     val r = createValidIncomingPacket(1100000 msat, CltvExpiry(400100), payload)
     val u = createLocalUpdate(shortId1, htlcMinimum = outgoingAmount + 1.msat)
 
@@ -201,7 +187,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
   test("relay an htlc-add (expiry larger than our requirements)") { f =>
     import f._
 
-    val payload = RelayLegacyPayload(shortId1, outgoingAmount, outgoingExpiry)
+    val payload = ChannelRelayPayload(shortId1, outgoingAmount, outgoingExpiry)
     val u = createLocalUpdate(shortId1)
     val r = createValidIncomingPacket(1100000 msat, outgoingExpiry + u.channelUpdate.cltvExpiryDelta + CltvExpiryDelta(1), payload)
 
@@ -214,7 +200,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
   test("fail to relay an htlc-add (expiry too small)") { f =>
     import f._
 
-    val payload = RelayLegacyPayload(shortId1, outgoingAmount, outgoingExpiry)
+    val payload = ChannelRelayPayload(shortId1, outgoingAmount, outgoingExpiry)
     val u = createLocalUpdate(shortId1)
     val r = createValidIncomingPacket(1100000 msat, outgoingExpiry + u.channelUpdate.cltvExpiryDelta - CltvExpiryDelta(1), payload)
 
@@ -227,7 +213,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
   test("fail to relay an htlc-add (fee insufficient)") { f =>
     import f._
 
-    val payload = RelayLegacyPayload(shortId1, outgoingAmount, outgoingExpiry)
+    val payload = ChannelRelayPayload(shortId1, outgoingAmount, outgoingExpiry)
     val r = createValidIncomingPacket(outgoingAmount + 1.msat, CltvExpiry(400100), payload)
     val u = createLocalUpdate(shortId1)
 
@@ -241,7 +227,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     import f._
 
     val channelId1 = channelIds(shortId1)
-    val payload = RelayLegacyPayload(shortId1, outgoingAmount, outgoingExpiry)
+    val payload = ChannelRelayPayload(shortId1, outgoingAmount, outgoingExpiry)
     val r = createValidIncomingPacket(1100000 msat, CltvExpiry(400100), payload)
     val u = createLocalUpdate(shortId1)
     val u_disabled = createLocalUpdate(shortId1, enabled = false)
@@ -290,7 +276,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     channelUpdates.values.foreach(u => channelRelayer ! WrappedLocalChannelUpdate(u))
 
     {
-      val payload = RelayLegacyPayload(ShortChannelId(12345), 998900 msat, CltvExpiry(60))
+      val payload = ChannelRelayPayload(ShortChannelId(12345), 998900 msat, CltvExpiry(60))
       val r = createValidIncomingPacket(1000000 msat, CltvExpiry(70), payload)
       channelRelayer ! Relay(r)
       // select the channel to the same node, with the lowest capacity and balance but still high enough to handle the payment
@@ -310,35 +296,35 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     }
     {
       // higher amount payment (have to increased incoming htlc amount for fees to be sufficient)
-      val payload = RelayLegacyPayload(ShortChannelId(12345), 50000000 msat, CltvExpiry(60))
+      val payload = ChannelRelayPayload(ShortChannelId(12345), 50000000 msat, CltvExpiry(60))
       val r = createValidIncomingPacket(60000000 msat, CltvExpiry(70), payload)
       channelRelayer ! Relay(r)
       expectFwdAdd(register, ShortChannelId(11111), payload.amountToForward, payload.outgoingCltv).message
     }
     {
       // lower amount payment
-      val payload = RelayLegacyPayload(ShortChannelId(12345), 1000 msat, CltvExpiry(60))
+      val payload = ChannelRelayPayload(ShortChannelId(12345), 1000 msat, CltvExpiry(60))
       val r = createValidIncomingPacket(60000000 msat, CltvExpiry(70), payload)
       channelRelayer ! Relay(r)
       expectFwdAdd(register, ShortChannelId(33333), payload.amountToForward, payload.outgoingCltv).message
     }
     {
       // payment too high, no suitable channel found, we keep the requested one
-      val payload = RelayLegacyPayload(ShortChannelId(12345), 1000000000 msat, CltvExpiry(60))
+      val payload = ChannelRelayPayload(ShortChannelId(12345), 1000000000 msat, CltvExpiry(60))
       val r = createValidIncomingPacket(1010000000 msat, CltvExpiry(70), payload)
       channelRelayer ! Relay(r)
       expectFwdAdd(register, ShortChannelId(12345), payload.amountToForward, payload.outgoingCltv).message
     }
     {
       // cltv expiry larger than our requirements
-      val payload = RelayLegacyPayload(ShortChannelId(12345), 998900 msat, CltvExpiry(50))
+      val payload = ChannelRelayPayload(ShortChannelId(12345), 998900 msat, CltvExpiry(50))
       val r = createValidIncomingPacket(1000000 msat, CltvExpiry(70), payload)
       channelRelayer ! Relay(r)
       expectFwdAdd(register, ShortChannelId(22223), payload.amountToForward, payload.outgoingCltv).message
     }
     {
       // cltv expiry too small, no suitable channel found
-      val payload = RelayLegacyPayload(ShortChannelId(12345), 998900 msat, CltvExpiry(61))
+      val payload = ChannelRelayPayload(ShortChannelId(12345), 998900 msat, CltvExpiry(61))
       val r = createValidIncomingPacket(1000000 msat, CltvExpiry(70), payload)
       channelRelayer ! Relay(r)
       expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, Right(IncorrectCltvExpiry(CltvExpiry(61), channelUpdates(ShortChannelId(12345)).channelUpdate)), commit = true))
@@ -349,7 +335,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     import f._
 
     val channelId1 = channelIds(shortId1)
-    val payload = RelayLegacyPayload(shortId1, outgoingAmount, outgoingExpiry)
+    val payload = ChannelRelayPayload(shortId1, outgoingAmount, outgoingExpiry)
     val r = createValidIncomingPacket(1100000 msat, CltvExpiry(400100), payload)
     val u = createLocalUpdate(shortId1)
     val u_disabled = createLocalUpdate(shortId1, enabled = false)
@@ -381,7 +367,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     system.eventStream ! EventStream.Subscribe(eventListener.ref)
 
     val channelId1 = channelIds(shortId1)
-    val payload = RelayLegacyPayload(shortId1, outgoingAmount, outgoingExpiry)
+    val payload = ChannelRelayPayload(shortId1, outgoingAmount, outgoingExpiry)
     val r = createValidIncomingPacket(1100000 msat, CltvExpiry(400100), payload)
     val u = createLocalUpdate(shortId1)
     val downstream_htlc = UpdateAddHtlc(channelId1, 7, outgoingAmount, paymentHash, outgoingExpiry, emptyOnionPacket)
