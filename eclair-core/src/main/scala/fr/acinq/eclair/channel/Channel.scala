@@ -1989,28 +1989,32 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
         case _ => ()
       }
 
-      (state, nextState, stateData, nextStateData) match {
-        // ORDER MATTERS!
-        case (WAIT_FOR_INIT_INTERNAL, OFFLINE, _, normal: DATA_NORMAL) =>
-          Logs.withMdc(diagLog)(Logs.mdc(category_opt = Some(Logs.LogCategory.CONNECTION))) {
-            log.debug("re-emitting channel_update={} enabled={} ", normal.channelUpdate, normal.channelUpdate.channelFlags.isEnabled)
-          }
-          context.system.eventStream.publish(LocalChannelUpdate(self, normal.commitments.channelId, normal.shortChannelId, normal.commitments.remoteParams.nodeId, normal.channelAnnouncement, normal.channelUpdate, normal.commitments))
-        case (_, _, d1: DATA_NORMAL, d2: DATA_NORMAL) if d1.channelUpdate == d2.channelUpdate && d1.channelAnnouncement == d2.channelAnnouncement =>
-          // don't do anything if neither the channel_update nor the channel_announcement didn't change
-          ()
-        case (WAIT_FOR_FUNDING_LOCKED | NORMAL | OFFLINE | SYNCING, NORMAL | OFFLINE, _, normal: DATA_NORMAL) =>
-          // when we do WAIT_FOR_FUNDING_LOCKED->NORMAL or NORMAL->NORMAL or SYNCING->NORMAL or NORMAL->OFFLINE, we send out the new channel_update (most of the time it will just be to enable/disable the channel)
-          log.info("emitting channel_update={} enabled={} ", normal.channelUpdate, normal.channelUpdate.channelFlags.isEnabled)
-          context.system.eventStream.publish(LocalChannelUpdate(self, normal.commitments.channelId, normal.shortChannelId, normal.commitments.remoteParams.nodeId, normal.channelAnnouncement, normal.channelUpdate, normal.commitments))
-        case (_, _, _: DATA_NORMAL, _: DATA_NORMAL) =>
-          // in any other case (e.g. OFFLINE->SYNCING) we do nothing
-          ()
-        case (_, _, normal: DATA_NORMAL, _) =>
-          // when we finally leave the NORMAL state (or OFFLINE with NORMAL data) to go to SHUTDOWN/NEGOTIATING/CLOSING/ERR*, we advertise the fact that channel can't be used for payments anymore
-          // if the channel is private we don't really need to tell the counterparty because it is already aware that the channel is being closed
-          context.system.eventStream.publish(LocalChannelDown(self, normal.commitments.channelId, normal.shortChannelId, normal.commitments.remoteParams.nodeId))
-        case _ => ()
+      sealed trait EmitEvent
+      case class EmitLocalChannelUpdate(d: DATA_NORMAL) extends EmitEvent
+      case class EmitLocalChannelDown(d: DATA_NORMAL) extends EmitEvent
+
+      val emitEvent_opt: Option[EmitEvent] = (state, nextState, stateData, nextStateData) match {
+        case (WAIT_FOR_INIT_INTERNAL, OFFLINE, _, d: DATA_NORMAL) => Some(EmitLocalChannelUpdate(d))
+        case (WAIT_FOR_FUNDING_LOCKED, NORMAL, _, d: DATA_NORMAL) => Some(EmitLocalChannelUpdate(d))
+        case (NORMAL, NORMAL, d1: DATA_NORMAL, d2: DATA_NORMAL) if d1.channelUpdate != d2.channelUpdate || d1.channelAnnouncement != d2.channelAnnouncement => Some(EmitLocalChannelUpdate(d2))
+        case (SYNCING, NORMAL, d1: DATA_NORMAL, d2: DATA_NORMAL) if d1.channelUpdate != d2.channelUpdate || d1.channelAnnouncement != d2.channelAnnouncement => Some(EmitLocalChannelUpdate(d2))
+        case (NORMAL, OFFLINE, d1: DATA_NORMAL, d2: DATA_NORMAL) if d1.channelUpdate != d2.channelUpdate || d1.channelAnnouncement != d2.channelAnnouncement => Some(EmitLocalChannelUpdate(d2))
+        case (OFFLINE, OFFLINE, d1: DATA_NORMAL, d2: DATA_NORMAL) if d1.channelUpdate != d2.channelUpdate || d1.channelAnnouncement != d2.channelAnnouncement => Some(EmitLocalChannelUpdate(d2))
+        // When a channel that could previously be used to relay payments starts closing, we advertise the fact that this channel can't be used for payments anymore
+        // If the channel is private we don't really need to tell the counterparty because it is already aware that the channel is being closed
+        case (NORMAL, SHUTDOWN | NEGOTIATING | CLOSING | CLOSED | ERR_INFORMATION_LEAK | WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT, d: DATA_NORMAL, _) => Some(EmitLocalChannelDown(d))
+        case (SYNCING, SHUTDOWN | NEGOTIATING | CLOSING | CLOSED | ERR_INFORMATION_LEAK | WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT, d: DATA_NORMAL, _) => Some(EmitLocalChannelDown(d))
+        case (OFFLINE, SHUTDOWN | NEGOTIATING | CLOSING | CLOSED | ERR_INFORMATION_LEAK | WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT, d: DATA_NORMAL, _) => Some(EmitLocalChannelDown(d))
+        case _ => None
+      }
+
+      emitEvent_opt.foreach {
+        case EmitLocalChannelUpdate(d) =>
+          log.info("emitting channel_update={} enabled={} ", d.channelUpdate, d.channelUpdate.channelFlags.isEnabled)
+          context.system.eventStream.publish(LocalChannelUpdate(self, d.channelId, d.shortChannelId, d.commitments.remoteParams.nodeId, d.channelAnnouncement, d.channelUpdate, d.commitments))
+        case EmitLocalChannelDown(d) =>
+          log.info("emitting channel_down")
+          context.system.eventStream.publish(LocalChannelDown(self, d.channelId, d.shortChannelId, d.commitments.remoteParams.nodeId))
       }
 
       (stateData, nextStateData) match {
