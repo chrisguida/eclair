@@ -160,7 +160,7 @@ object Channel {
 
 }
 
-class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val remoteNodeId: PublicKey, val blockchain: typed.ActorRef[ZmqWatcher.Command], val relayer: ActorRef, val txPublisherFactory: Channel.TxPublisherFactory, val origin_opt: Option[ActorRef] = None)(implicit val ec: ExecutionContext = ExecutionContext.Implicits.global)
+class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, protected val remoteNodeId: PublicKey, protected val blockchain: typed.ActorRef[ZmqWatcher.Command], relayer: ActorRef, txPublisherFactory: Channel.TxPublisherFactory, protected val origin_opt: Option[ActorRef] = None)(implicit protected val ec: ExecutionContext = ExecutionContext.Implicits.global)
   extends FSM[ChannelState, ChannelData] with FSMDiagnosticActorLogging[ChannelState, ChannelData]
     with ChannelOpenSingleFunder
     with UtilityHandlers
@@ -169,27 +169,27 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
 
   import Channel._
 
-  val keyManager: ChannelKeyManager = nodeParams.channelKeyManager
+  protected val keyManager: ChannelKeyManager = nodeParams.channelKeyManager
 
   // we pass these to helpers classes so that they have the logging context
   implicit def implicitLog: akka.event.DiagnosticLoggingAdapter = diagLog
 
   // we assume that the peer is the channel's parent
-  val peer = context.parent
+  protected val peer = context.parent
   // noinspection ActorMutableStateInspection
   // the last active connection we are aware of; note that the peer manages connections and asynchronously notifies
   // the channel, which means that if we get disconnected, the previous active connection will die and some messages will
   // be sent to dead letters, before the channel gets notified of the disconnection; knowing that this will happen, we
   // choose to not make this an Option (that would be None before the first connection), and instead embrace the fact
   // that the active connection may point to dead letters at all time
-  var activeConnection = context.system.deadLetters
+  protected var activeConnection = context.system.deadLetters
 
-  val txPublisher = txPublisherFactory.spawnTxPublisher(context, remoteNodeId)
+  protected val txPublisher = txPublisherFactory.spawnTxPublisher(context, remoteNodeId)
 
   // this will be used to detect htlc timeouts
   context.system.eventStream.subscribe(self, classOf[CurrentBlockHeight])
   // the constant delay by which we delay processing of blocks (it will be smoothened among all channels)
-  private val blockProcessingDelay = Random.nextLong(nodeParams.channelConf.maxBlockProcessingDelay.toMillis + 1).millis
+  protected val blockProcessingDelay = Random.nextLong(nodeParams.channelConf.maxBlockProcessingDelay.toMillis + 1).millis
   // this will be used to make sure the current commitment fee is up-to-date
   context.system.eventStream.subscribe(self, classOf[CurrentFeerates])
 

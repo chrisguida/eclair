@@ -34,18 +34,9 @@ import scala.concurrent.duration.DurationInt
 /**
  * This trait contains utility functions for basic channel tasks.
  */
-trait UtilityHandlers extends FSM[ChannelState, ChannelData] {
+trait UtilityHandlers {
 
-  // @formatter:off
-  def nodeParams: NodeParams
-  def remoteNodeId: PublicKey
-
-  def peer: akka.actor.ActorRef
-  def activeConnection: akka.actor.ActorRef
-  def self: akka.actor.ActorRef
-  // @formatter:on
-
-  implicit def implicitLog: akka.event.DiagnosticLoggingAdapter
+  this: Channel =>
 
   def send(msg: LightningMessage): Unit = {
     peer ! Peer.OutgoingMessage(msg, activeConnection)
