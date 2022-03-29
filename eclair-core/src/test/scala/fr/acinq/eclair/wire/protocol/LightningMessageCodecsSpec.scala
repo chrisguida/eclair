@@ -345,7 +345,7 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
     val accept = AcceptChannel(randomBytes32(), 3 sat, UInt64(4), 5 sat, 6 msat, 7, CltvExpiryDelta(8), 9, publicKey(1), point(2), point(3), point(4), point(5), point(6))
     val funding_created = FundingCreated(randomBytes32(), bin32(0), 3, randomBytes64())
     val funding_signed = FundingSigned(randomBytes32(), randomBytes64())
-    val funding_locked = FundingLocked(randomBytes32(), point(2))
+    val channel_ready = ChannelReady(randomBytes32(), point(2))
     val update_fee = UpdateFee(randomBytes32(), FeeratePerKw(2 sat))
     val shutdown = Shutdown(randomBytes32(), bin(47, 0))
     val closing_signed = ClosingSigned(randomBytes32(), 2 sat, randomBytes64())
@@ -380,7 +380,7 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
     val unknown_message = UnknownMessage(tag = 60000, data = ByteVector32.One.bytes)
 
     val msgs: List[LightningMessage] =
-      open :: accept :: funding_created :: funding_signed :: funding_locked :: update_fee :: shutdown :: closing_signed ::
+      open :: accept :: funding_created :: funding_signed :: channel_ready :: update_fee :: shutdown :: closing_signed ::
         update_add_htlc :: update_fulfill_htlc :: update_fail_htlc :: update_fail_malformed_htlc :: commit_sig :: revoke_and_ack ::
         channel_announcement :: node_announcement :: channel_update :: gossip_timestamp_filter :: query_short_channel_id :: query_channel_range :: reply_channel_range :: announcement_signatures ::
         ping :: pong :: channel_reestablish :: unknown_message :: Nil
