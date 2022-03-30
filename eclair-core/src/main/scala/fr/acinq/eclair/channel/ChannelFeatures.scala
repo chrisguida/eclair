@@ -17,7 +17,7 @@
 package fr.acinq.eclair.channel
 
 import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, DefaultCommitmentFormat, UnsafeLegacyAnchorOutputsCommitmentFormat, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat}
-import fr.acinq.eclair.{FeatureSupport, Features, InitFeature, Feature}
+import fr.acinq.eclair.{Feature, FeatureSupport, Features, InitFeature}
 
 /**
  * Created by t-bast on 24/06/2021.
@@ -32,7 +32,7 @@ case class ChannelFeatures(features: Set[Feature]) {
 
   val channelType: SupportedChannelType = {
     if (hasFeature(Features.AnchorOutputsZeroFeeHtlcTx)) {
-      ChannelTypes.AnchorOutputsZeroFeeHtlcTx
+      ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = features.contains(Features.ScidAlias), zeroConf = features.contains(Features.ZeroConf))
     } else if (hasFeature(Features.AnchorOutputs)) {
       ChannelTypes.AnchorOutputs
     } else if (hasFeature(Features.StaticRemoteKey)) {
@@ -101,11 +101,16 @@ object ChannelTypes {
     override def commitmentFormat: CommitmentFormat = UnsafeLegacyAnchorOutputsCommitmentFormat
     override def toString: String = "anchor_outputs"
   }
-  case object AnchorOutputsZeroFeeHtlcTx extends SupportedChannelType {
-    override def features: Set[InitFeature] = Set(Features.StaticRemoteKey, Features.AnchorOutputsZeroFeeHtlcTx)
+  case class AnchorOutputsZeroFeeHtlcTx(scidAlias: Boolean, zeroConf: Boolean) extends SupportedChannelType {
+    override def features: Set[InitFeature] = Set(
+      if (scidAlias) Some(Features.ScidAlias) else None,
+      if (zeroConf) Some(Features.ZeroConf) else None,
+      Some(Features.StaticRemoteKey),
+      Some(Features.AnchorOutputsZeroFeeHtlcTx)
+    ).flatten
     override def paysDirectlyToWallet: Boolean = false
     override def commitmentFormat: CommitmentFormat = ZeroFeeHtlcTxAnchorOutputsCommitmentFormat
-    override def toString: String = "anchor_outputs_zero_fee_htlc_tx"
+    override def toString: String = s"anchor_outputs_zero_fee_htlc_tx${if (scidAlias) "+scid_alias" else ""}${if (zeroConf) "+zeroconf" else ""}"
   }
   case class UnsupportedChannelType(featureBits: Features[InitFeature]) extends ChannelType {
     override def features: Set[InitFeature] = featureBits.activated.keySet
@@ -113,21 +118,29 @@ object ChannelTypes {
   }
   // @formatter:on
 
-  private val features2ChannelType: Map[Features[InitFeature], SupportedChannelType] = Set(Standard, StaticRemoteKey, AnchorOutputs, AnchorOutputsZeroFeeHtlcTx)
+  private val features2ChannelType: Map[Features[InitFeature], SupportedChannelType] = Set(
+    Standard,
+    StaticRemoteKey,
+    AnchorOutputs,
+    AnchorOutputsZeroFeeHtlcTx(scidAlias = false, zeroConf = false),
+    AnchorOutputsZeroFeeHtlcTx(scidAlias = false, zeroConf = true),
+    AnchorOutputsZeroFeeHtlcTx(scidAlias = true, zeroConf = false),
+    AnchorOutputsZeroFeeHtlcTx(scidAlias = true, zeroConf = true))
     .map(channelType => Features[InitFeature](channelType.features.map(_ -> FeatureSupport.Mandatory).toMap) -> channelType)
     .toMap
 
   // NB: Bolt 2: features must exactly match in order to identify a channel type.
   def fromFeatures(features: Features[InitFeature]): ChannelType = features2ChannelType.getOrElse(features, UnsupportedChannelType(features))
 
-
   /** Pick the channel type based on local and remote feature bits, as defined by the spec. */
-  def defaultFromFeatures(localFeatures: Features[InitFeature], remoteFeatures: Features[InitFeature]): SupportedChannelType = {
-    if (Features.canUseFeature(localFeatures, remoteFeatures, Features.AnchorOutputsZeroFeeHtlcTx)) {
-      AnchorOutputsZeroFeeHtlcTx
-    } else if (Features.canUseFeature(localFeatures, remoteFeatures, Features.AnchorOutputs)) {
+  def defaultFromFeatures(localFeatures: Features[InitFeature], remoteFeatures: Features[InitFeature], announceChannel: Boolean): SupportedChannelType = {
+    def canUse(feature: InitFeature) = Features.canUseFeature(localFeatures, remoteFeatures, feature)
+
+    if (canUse(Features.AnchorOutputsZeroFeeHtlcTx)) {
+      AnchorOutputsZeroFeeHtlcTx(scidAlias = canUse(Features.ScidAlias) && !announceChannel, zeroConf = canUse(Features.ZeroConf)) // alias feature is incompatible with public channel
+    } else if (canUse(Features.AnchorOutputs)) {
       AnchorOutputs
-    } else if (Features.canUseFeature(localFeatures, remoteFeatures, Features.StaticRemoteKey)) {
+    } else if (canUse(Features.StaticRemoteKey)) {
       StaticRemoteKey
     } else {
       Standard
