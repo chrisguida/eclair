@@ -23,10 +23,10 @@ import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.io.{MessageRelay, Switchboard}
 import fr.acinq.eclair.message.OnionMessages.ReceiveMessage
-import fr.acinq.eclair.randomBytes32
 import fr.acinq.eclair.wire.protocol.MessageOnion.FinalPayload
-import fr.acinq.eclair.wire.protocol.OnionMessage
-import scodec.bits.ByteVector
+import fr.acinq.eclair.wire.protocol.{GenericTlv, OnionMessage}
+import fr.acinq.eclair.{UInt64, randomBytes32, randomKey}
+import scodec.bits.{ByteVector, HexStringSyntax}
 
 import scala.collection.mutable
 import scala.concurrent.duration.FiniteDuration
@@ -61,14 +61,27 @@ object Postman {
 
       Behaviors.receiveMessagePartial {
         case WrappedMessage(finalPayload, Some(pathId)) if pathId.length == 32 =>
+          context.log.info("received message with pathId={}", pathId)
           val id = ByteVector32(pathId)
           subscribed.get(id).foreach(ref => {
             subscribed -= id
             ref ! Response(finalPayload)
           })
           Behaviors.same
-        case WrappedMessage(_, _) =>
-          // ignoring message with invalid or missing pathId
+        case WrappedMessage(finalPayload, pathId_opt) =>
+          // This code is just for temporary cross-implementation tests.
+          // If the message contains a reply path, we send a dummy answer.
+          finalPayload.replyPath.foreach(replyPath => {
+            context.log.info("sending dummy response to onion message")
+            val (nextNodeId, message) = OnionMessages.buildMessage(
+              randomKey(),
+              randomKey(),
+              Nil,
+              OnionMessages.BlindedPath(replyPath.blindedRoute),
+              Nil,
+              Seq(GenericTlv(UInt64(151), hex"deadbeef")))
+            switchboard ! Switchboard.RelayMessage(randomBytes32(), None, nextNodeId, message, MessageRelay.RelayAll, replyTo_opt = None)
+          })
           Behaviors.same
         case SendMessage(nextNodeId, message, None, ref, _) => // not expecting reply
           val messageId = randomBytes32()
