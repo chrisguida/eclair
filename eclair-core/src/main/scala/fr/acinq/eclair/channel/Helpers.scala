@@ -17,10 +17,10 @@
 package fr.acinq.eclair.channel
 
 import akka.event.{DiagnosticLoggingAdapter, LoggingAdapter}
+import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey, sha256}
 import fr.acinq.bitcoin.scalacompat.Script._
 import fr.acinq.bitcoin.scalacompat._
-import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.OnChainAddressGenerator
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeeratePerKw}
@@ -660,16 +660,21 @@ object Helpers {
 
         val htlcTxs: Map[OutPoint, Option[HtlcTx]] = claimHtlcOutputs(keyManager, commitments)
 
-        // If we don't have pending HTLCs, we don't have funds at risk, so we can aim for a slower confirmation.
-        val confirmCommitBefore = htlcTxs.values.flatten.map(htlcTx => htlcTx.confirmBefore).minOption.getOrElse(currentBlockHeight + feeTargets.commitmentWithoutHtlcsBlockTarget)
-        val claimAnchorTxs: List[ClaimAnchorOutputTx] = List(
-          withTxGenerationLog("local-anchor") {
-            Transactions.makeClaimLocalAnchorOutputTx(tx, localFundingPubKey, confirmCommitBefore)
-          },
-          withTxGenerationLog("remote-anchor") {
-            Transactions.makeClaimRemoteAnchorOutputTx(tx, commitments.remoteParams.fundingPubKey)
-          }
-        ).flatten
+        val skipAnchors = !feeTargets.spendAnchorWithoutHtlcs && htlcTxs.isEmpty
+        val claimAnchorTxs: List[ClaimAnchorOutputTx] = if (!skipAnchors) {
+          // If we don't have pending HTLCs, we don't have funds at risk, so we can aim for a slower confirmation.
+          val confirmCommitBefore = htlcTxs.values.flatten.map(htlcTx => htlcTx.confirmBefore).minOption.getOrElse(currentBlockHeight + feeTargets.commitmentWithoutHtlcsBlockTarget)
+          List(
+            withTxGenerationLog("local-anchor") {
+              Transactions.makeClaimLocalAnchorOutputTx(tx, localFundingPubKey, confirmCommitBefore)
+            },
+            withTxGenerationLog("remote-anchor") {
+              Transactions.makeClaimRemoteAnchorOutputTx(tx, commitments.remoteParams.fundingPubKey)
+            }
+          ).flatten
+        } else {
+          Nil
+        }
 
         LocalCommitPublished(
           commitTx = tx,
@@ -764,17 +769,22 @@ object Helpers {
 
         val htlcTxs: Map[OutPoint, Option[ClaimHtlcTx]] = claimHtlcOutputs(keyManager, commitments, remoteCommit, feeEstimator)
 
-        // If we don't have pending HTLCs, we don't have funds at risk, so we can aim for a slower confirmation.
-        val confirmCommitBefore = htlcTxs.values.flatten.map(htlcTx => htlcTx.confirmBefore).minOption.getOrElse(currentBlockHeight + feeTargets.commitmentWithoutHtlcsBlockTarget)
-        val localFundingPubkey = keyManager.fundingPublicKey(commitments.localParams.fundingKeyPath).publicKey
-        val claimAnchorTxs: List[ClaimAnchorOutputTx] = List(
-          withTxGenerationLog("local-anchor") {
-            Transactions.makeClaimLocalAnchorOutputTx(tx, localFundingPubkey, confirmCommitBefore)
-          },
-          withTxGenerationLog("remote-anchor") {
-            Transactions.makeClaimRemoteAnchorOutputTx(tx, commitments.remoteParams.fundingPubKey)
-          }
-        ).flatten
+        val skipAnchors = !feeTargets.spendAnchorWithoutHtlcs && htlcTxs.isEmpty
+        val claimAnchorTxs: List[ClaimAnchorOutputTx] = if (!skipAnchors) {
+          // If we don't have pending HTLCs, we don't have funds at risk, so we can aim for a slower confirmation.
+          val confirmCommitBefore = htlcTxs.values.flatten.map(htlcTx => htlcTx.confirmBefore).minOption.getOrElse(currentBlockHeight + feeTargets.commitmentWithoutHtlcsBlockTarget)
+          val localFundingPubkey = keyManager.fundingPublicKey(commitments.localParams.fundingKeyPath).publicKey
+          List(
+            withTxGenerationLog("local-anchor") {
+              Transactions.makeClaimLocalAnchorOutputTx(tx, localFundingPubkey, confirmCommitBefore)
+            },
+            withTxGenerationLog("remote-anchor") {
+              Transactions.makeClaimRemoteAnchorOutputTx(tx, commitments.remoteParams.fundingPubKey)
+            }
+          ).flatten
+        } else {
+          Nil
+        }
 
         RemoteCommitPublished(
           commitTx = tx,
