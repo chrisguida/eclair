@@ -18,6 +18,7 @@ package fr.acinq.eclair.wire.internal.channel.version2
 
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.{ExtendedPrivateKey, KeyPath}
 import fr.acinq.bitcoin.scalacompat.{OutPoint, Transaction, TxOut}
+import fr.acinq.eclair.BlockHeight
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.transactions.Transactions._
@@ -27,7 +28,6 @@ import fr.acinq.eclair.wire.internal.channel.version0.ChannelTypes0.{HtlcTxAndSi
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{BlockHeight, Features, InitFeature}
 import scodec.bits.ByteVector
 import scodec.codecs._
 import scodec.{Attempt, Codec}
@@ -277,7 +277,10 @@ private[channel] object ChannelCodecs2 {
     val DATA_WAIT_FOR_CHANNEL_READY_Codec: Codec[DATA_WAIT_FOR_CHANNEL_READY] = (
       ("commitments" | commitmentsCodec) ::
         ("shortChannelId" | shortchannelid) ::
-        ("lastSent" | lengthDelimited(channelReadyCodec))).as[DATA_WAIT_FOR_CHANNEL_READY]
+        ("lastSent" | lengthDelimited(channelReadyCodec))).map {
+      case commitments :: shortChannelId :: lastSent :: HNil =>
+        DATA_WAIT_FOR_CHANNEL_READY(commitments, shortChannelId_opt = Some(shortChannelId), localAlias = shortChannelId, lastSent = lastSent)
+    }.decodeOnly
 
     val DATA_NORMAL_Codec: Codec[DATA_NORMAL] = (
       ("commitments" | commitmentsCodec) ::
@@ -287,7 +290,10 @@ private[channel] object ChannelCodecs2 {
         ("channelUpdate" | lengthDelimited(channelUpdateCodec)) ::
         ("localShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
         ("remoteShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
-        ("closingFeerates" | provide(Option.empty[ClosingFeerates]))).as[DATA_NORMAL]
+        ("closingFeerates" | provide(Option.empty[ClosingFeerates]))).map {
+      case commitments :: shortChannelId :: buried :: channelAnnouncement :: channelUpdate :: localShutdown :: remoteShutdown :: closingFeerates :: HNil =>
+        DATA_NORMAL(commitments, shortChannelId_opt = Some(shortChannelId), buried = buried, channelAnnouncement, channelUpdate, localAlias = shortChannelId, remoteAlias_opt = None, localShutdown, remoteShutdown, closingFeerates)
+    }.decodeOnly
 
     val DATA_SHUTDOWN_Codec: Codec[DATA_SHUTDOWN] = (
       ("commitments" | commitmentsCodec) ::

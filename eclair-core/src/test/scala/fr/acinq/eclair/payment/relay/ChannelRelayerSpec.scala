@@ -486,14 +486,15 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     val channels6 = getOutgoingChannels(true)
     assert(channels6.size === 1)
 
-    // Simulate a chain re-org that changes the shortChannelId:
-    channelRelayer ! WrappedShortChannelIdAssigned(ShortChannelIdAssigned(null, channelId_ab, ShortChannelId(42), Some(channelUpdate_ab.shortChannelId)))
+    // Assign an alias
+    val alias = ShortChannelId.generateLocalAlias()
+    channelRelayer ! WrappedShortChannelIdAssigned(ShortChannelIdAssigned(null, channelId_ab, Some(channelUpdate_ab.shortChannelId), alias, None, ChannelFeatures(Set.empty[Feature])))
 
     // We should receive the updated channel update containing the new shortChannelId:
-    channelRelayer ! WrappedLocalChannelUpdate(LocalChannelUpdate(null, channelId_ab, ShortChannelId(42), a, None, channelUpdate_ab.copy(shortChannelId = ShortChannelId(42)), makeCommitments(channelId_ab, 100000 msat, 200000 msat)))
+    channelRelayer ! WrappedLocalChannelUpdate(LocalChannelUpdate(null, channelId_ab, alias, a, None, channelUpdate_ab.copy(shortChannelId = alias), makeCommitments(channelId_ab, 100000 msat, 200000 msat)))
     val channels7 = getOutgoingChannels(true)
     assert(channels7.size === 1)
-    assert(channels7.head.channelUpdate.shortChannelId === ShortChannelId(42))
+    assert(channels7.head.channelUpdate.shortChannelId === alias)
   }
 
 }

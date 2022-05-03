@@ -60,7 +60,7 @@ class ChannelsDbSpec extends AnyFunSuite {
 
       val channel1 = ChannelCodecsSpec.normal
       val channel2a = ChannelCodecsSpec.normal.modify(_.commitments.channelId).setTo(randomBytes32())
-      val channel2b = channel2a.modify(_.shortChannelId).setTo(ShortChannelId(189371))
+      val channel2b = channel2a.modify(_.shortChannelId_opt).setTo(Some(ShortChannelId(189371)))
 
       val commitNumber = 42
       val paymentHash1 = ByteVector32.Zeroes

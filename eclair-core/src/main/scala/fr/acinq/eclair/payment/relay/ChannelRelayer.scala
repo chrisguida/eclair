@@ -115,9 +115,10 @@ object ChannelRelayer {
             }
             apply(nodeParams, register, channels1, scid2channels, node2channels)
 
-          case WrappedShortChannelIdAssigned(ShortChannelIdAssigned(_, channelId, shortChannelId, previousShortChannelId_opt)) =>
-            context.log.debug(s"added new mapping shortChannelId=$shortChannelId for channelId=$channelId")
-            val scid2channels1 = scid2channels + (shortChannelId -> channelId)
+          case WrappedShortChannelIdAssigned(scidAssigned: ShortChannelIdAssigned) =>
+            val m = scidAssigned.scidsForRouting.map(_ -> scidAssigned.channelId).toMap
+            context.log.debug("added mappings scids={} to channelId={}", m.keys.mkString(","), scidAssigned.channelId)
+            val scid2channels1 = scid2channels ++ m
             apply(nodeParams, register, channels, scid2channels1, node2channels)
         }
       }

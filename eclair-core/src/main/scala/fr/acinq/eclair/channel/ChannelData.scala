@@ -426,12 +426,17 @@ final case class DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments: Commitments,
                                                  waitingSince: BlockHeight, // how long have we been waiting for the funding tx to confirm
                                                  deferred: Option[ChannelReady],
                                                  lastSent: Either[FundingCreated, FundingSigned]) extends PersistentChannelData
-final case class DATA_WAIT_FOR_CHANNEL_READY(commitments: Commitments, shortChannelId: ShortChannelId, lastSent: ChannelReady) extends PersistentChannelData
+final case class DATA_WAIT_FOR_CHANNEL_READY(commitments: Commitments,
+                                             shortChannelId_opt: Option[ShortChannelId],
+                                             localAlias: ShortChannelId,
+                                             lastSent: ChannelReady) extends PersistentChannelData
 final case class DATA_NORMAL(commitments: Commitments,
-                             shortChannelId: ShortChannelId,
+                             shortChannelId_opt: Option[ShortChannelId],
                              buried: Boolean,
                              channelAnnouncement: Option[ChannelAnnouncement],
                              channelUpdate: ChannelUpdate,
+                             localAlias: ShortChannelId,
+                             remoteAlias_opt: Option[ShortChannelId],
                              localShutdown: Option[Shutdown],
                              remoteShutdown: Option[Shutdown],
                              closingFeerates: Option[ClosingFeerates]) extends PersistentChannelData

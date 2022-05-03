@@ -56,6 +56,8 @@ object ShortChannelId {
   def outputIndex(shortChannelId: ShortChannelId): Int = (shortChannelId.id & 0xFFFF).toInt
 
   def coordinates(shortChannelId: ShortChannelId): TxCoordinates = TxCoordinates(blockHeight(shortChannelId), txIndex(shortChannelId), outputIndex(shortChannelId))
+
+  def generateLocalAlias(): ShortChannelId = ShortChannelId(System.nanoTime()) // TODO: fixme (duplicate, etc.)
 }
 
 case class TxCoordinates(blockHeight: BlockHeight, txIndex: Int, outputIndex: Int)
