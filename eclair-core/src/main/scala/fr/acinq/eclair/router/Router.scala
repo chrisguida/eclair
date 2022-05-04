@@ -573,7 +573,7 @@ object Router {
                   stash: Stash,
                   rebroadcast: Rebroadcast,
                   awaiting: Map[ChannelAnnouncement, Seq[RemoteGossip]], // note: this is a seq because we want to preserve order: first actor is the one who we need to send a tcp-ack when validation is done
-                  privateChannels: Map[ShortChannelId, PrivateChannel],
+                  privateChannels: Map[ShortChannelId, PrivateChannel], // indexed by *local alias*
                   excludedChannels: Set[ChannelDesc], // those channels are temporarily excluded from route calculation, because their node returned a TemporaryChannelFailure
                   graph: DirectedGraph,
                   sync: Map[PublicKey, Syncing] // keep tracks of channel range queries sent to each peer. If there is an entry in the map, it means that there is an ongoing query for which we have not yet received an 'end' message
@@ -589,12 +589,15 @@ object Router {
 
   def getDesc(u: ChannelUpdate, channel: ChannelAnnouncement): ChannelDesc = {
     // the least significant bit tells us if it is node1 or node2
-    if (u.channelFlags.isNode1) ChannelDesc(u.shortChannelId, channel.nodeId1, channel.nodeId2) else ChannelDesc(u.shortChannelId, channel.nodeId2, channel.nodeId1)
+    if (u.channelFlags.isNode1) ChannelDesc(channel.shortChannelId, channel.nodeId1, channel.nodeId2) else ChannelDesc(channel.shortChannelId, channel.nodeId2, channel.nodeId1)
   }
 
-  def getDesc(u: ChannelUpdate, pc: PrivateChannel): ChannelDesc = {
+  /**
+   * @param shortChannelId we don't use the scid from the channel update because it may be a remote alias
+   */
+  def getDesc(shortChannelId: ShortChannelId, u: ChannelUpdate, pc: PrivateChannel): ChannelDesc = {
     // the least significant bit tells us if it is node1 or node2
-    if (u.channelFlags.isNode1) ChannelDesc(u.shortChannelId, pc.nodeId1, pc.nodeId2) else ChannelDesc(u.shortChannelId, pc.nodeId2, pc.nodeId1)
+    if (u.channelFlags.isNode1) ChannelDesc(shortChannelId, pc.nodeId1, pc.nodeId2) else ChannelDesc(shortChannelId, pc.nodeId2, pc.nodeId1)
   }
 
   def isRelatedTo(c: ChannelAnnouncement, nodeId: PublicKey) = nodeId == c.nodeId1 || nodeId == c.nodeId2
