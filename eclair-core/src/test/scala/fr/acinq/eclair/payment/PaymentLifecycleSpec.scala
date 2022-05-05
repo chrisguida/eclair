@@ -103,7 +103,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     import cfg._
 
     // pre-computed route going from A to D
-    val route = Route(defaultAmountMsat, ChannelHop(a, b, update_ab) :: ChannelHop(b, c, update_bc) :: ChannelHop(c, d, update_cd) :: Nil)
+    val route = Route(defaultAmountMsat, ChannelHop(update_ab.shortChannelId, a, b, update_ab) :: ChannelHop(update_bc.shortChannelId, b, c, update_bc) :: ChannelHop(update_cd.shortChannelId, c, d, update_cd) :: Nil)
     val request = SendPaymentToRoute(sender.ref, Right(route), PaymentOnion.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret.get, defaultInvoice.paymentMetadata))
     sender.send(paymentFSM, request)
     routerForwarder.expectNoMessage(100 millis) // we don't need the router, we have the pre-computed route
@@ -736,21 +736,21 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
   test("filter errors properly") { _ =>
     val failures = Seq(
       LocalFailure(defaultAmountMsat, Nil, RouteNotFound),
-      RemoteFailure(defaultAmountMsat, ChannelHop(a, b, update_ab) :: Nil, Sphinx.DecryptedFailurePacket(a, TemporaryNodeFailure)),
-      LocalFailure(defaultAmountMsat, ChannelHop(a, b, update_ab) :: Nil, ChannelUnavailable(ByteVector32.Zeroes)),
+      RemoteFailure(defaultAmountMsat, ChannelHop(update_ab.shortChannelId, a, b, update_ab) :: Nil, Sphinx.DecryptedFailurePacket(a, TemporaryNodeFailure)),
+      LocalFailure(defaultAmountMsat, ChannelHop(update_ab.shortChannelId, a, b, update_ab) :: Nil, ChannelUnavailable(ByteVector32.Zeroes)),
       LocalFailure(defaultAmountMsat, Nil, RouteNotFound)
     )
     val filtered = PaymentFailure.transformForUser(failures)
     val expected = Seq(
       LocalFailure(defaultAmountMsat, Nil, RouteNotFound),
-      RemoteFailure(defaultAmountMsat, ChannelHop(a, b, update_ab) :: Nil, Sphinx.DecryptedFailurePacket(a, TemporaryNodeFailure)),
-      LocalFailure(defaultAmountMsat, ChannelHop(a, b, update_ab) :: Nil, ChannelUnavailable(ByteVector32.Zeroes))
+      RemoteFailure(defaultAmountMsat, ChannelHop(update_ab.shortChannelId, a, b, update_ab) :: Nil, Sphinx.DecryptedFailurePacket(a, TemporaryNodeFailure)),
+      LocalFailure(defaultAmountMsat, ChannelHop(update_ab.shortChannelId, a, b, update_ab) :: Nil, ChannelUnavailable(ByteVector32.Zeroes))
     )
     assert(filtered === expected)
   }
 
   test("ignore failed nodes/channels") { _ =>
-    val route_abcd = ChannelHop(a, b, update_ab) :: ChannelHop(b, c, update_bc) :: ChannelHop(c, d, update_cd) :: Nil
+    val route_abcd = ChannelHop(update_ab.shortChannelId, a, b, update_ab) :: ChannelHop(update_bc.shortChannelId, b, c, update_bc) :: ChannelHop(update_cd.shortChannelId, c, d, update_cd) :: Nil
     val testCases = Seq(
       // local failures -> ignore first channel if there is one
       (LocalFailure(defaultAmountMsat, Nil, RouteNotFound), Set.empty, Set.empty),
@@ -765,8 +765,8 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
       (RemoteFailure(defaultAmountMsat, route_abcd, Sphinx.DecryptedFailurePacket(c, UnknownNextPeer)), Set.empty, Set(ChannelDesc(channelId_cd, c, d))),
       (RemoteFailure(defaultAmountMsat, route_abcd, Sphinx.DecryptedFailurePacket(b, FeeInsufficient(100 msat, update_bc))), Set.empty, Set.empty),
       // unreadable remote failures -> blacklist all nodes except our direct peer and the final recipient
-      (UnreadableRemoteFailure(defaultAmountMsat, ChannelHop(a, b, update_ab) :: Nil), Set.empty, Set.empty),
-      (UnreadableRemoteFailure(defaultAmountMsat, ChannelHop(a, b, update_ab) :: ChannelHop(b, c, update_bc) :: ChannelHop(c, d, update_cd) :: ChannelHop(d, e, null) :: Nil), Set(c, d), Set.empty)
+      (UnreadableRemoteFailure(defaultAmountMsat, ChannelHop(update_ab.shortChannelId, a, b, update_ab) :: Nil), Set.empty, Set.empty),
+      (UnreadableRemoteFailure(defaultAmountMsat, ChannelHop(update_ab.shortChannelId, a, b, update_ab) :: ChannelHop(update_bc.shortChannelId, b, c, update_bc) :: ChannelHop(update_cd.shortChannelId, c, d, update_cd) :: ChannelHop(null, d, e, null) :: Nil), Set(c, d), Set.empty)
     )
 
     for ((failure, expectedNodes, expectedChannels) <- testCases) {
@@ -810,7 +810,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     import cfg._
 
     // pre-computed route going from A to D
-    val route = Route(defaultAmountMsat, ChannelHop(a, b, update_ab) :: ChannelHop(b, c, update_bc) :: ChannelHop(c, d, update_cd) :: Nil)
+    val route = Route(defaultAmountMsat, ChannelHop(update_ab.shortChannelId, a, b, update_ab) :: ChannelHop(update_bc.shortChannelId, b, c, update_bc) :: ChannelHop(update_cd.shortChannelId, c, d, update_cd) :: Nil)
     val request = SendPaymentToRoute(sender.ref, Right(route), PaymentOnion.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret.get, defaultInvoice.paymentMetadata))
     sender.send(paymentFSM, request)
     routerForwarder.expectNoMessage(100 millis) // we don't need the router, we have the pre-computed route

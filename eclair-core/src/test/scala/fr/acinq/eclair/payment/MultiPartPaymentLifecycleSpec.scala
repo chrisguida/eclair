@@ -698,13 +698,13 @@ object MultiPartPaymentLifecycleSpec {
   val channelUpdate_ad = defaultChannelUpdate.copy(shortChannelId = channelId_ad)
   val channelUpdate_de = defaultChannelUpdate.copy(shortChannelId = channelId_de)
 
-  val hop_ab_1 = ChannelHop(a, b, channelUpdate_ab_1)
-  val hop_ab_2 = ChannelHop(a, b, channelUpdate_ab_2)
-  val hop_be = ChannelHop(b, e, channelUpdate_be)
-  val hop_ac_1 = ChannelHop(a, c, channelUpdate_ac_1)
-  val hop_ac_2 = ChannelHop(a, c, channelUpdate_ac_2)
-  val hop_ce = ChannelHop(c, e, channelUpdate_ce)
-  val hop_ad = ChannelHop(a, d, channelUpdate_ad)
-  val hop_de = ChannelHop(d, e, channelUpdate_de)
+  val hop_ab_1 = ChannelHop(channelUpdate_ab_1.shortChannelId, a, b, channelUpdate_ab_1)
+  val hop_ab_2 = ChannelHop(channelUpdate_ab_2.shortChannelId, a, b, channelUpdate_ab_2)
+  val hop_be = ChannelHop(channelUpdate_be.shortChannelId, b, e, channelUpdate_be)
+  val hop_ac_1 = ChannelHop(channelUpdate_ac_1.shortChannelId, a, c, channelUpdate_ac_1)
+  val hop_ac_2 = ChannelHop(channelUpdate_ac_2.shortChannelId, a, c, channelUpdate_ac_2)
+  val hop_ce = ChannelHop(channelUpdate_ce.shortChannelId, c, e, channelUpdate_ce)
+  val hop_ad = ChannelHop(channelUpdate_ad.shortChannelId, a, d, channelUpdate_ad)
+  val hop_de = ChannelHop(channelUpdate_de.shortChannelId, d, e, channelUpdate_de)
 
 }

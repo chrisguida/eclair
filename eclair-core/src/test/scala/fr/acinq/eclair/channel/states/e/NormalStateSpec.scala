@@ -17,6 +17,7 @@
 package fr.acinq.eclair.channel.states.e
 
 import akka.actor.ActorRef
+import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
@@ -25,6 +26,7 @@ import fr.acinq.eclair.Features.StaticRemoteKey
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.UInt64.Conversions._
 import fr.acinq.eclair._
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.blockchain.{CurrentBlockHeight, CurrentFeerates}
@@ -35,9 +37,11 @@ import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishRepla
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.io.Peer
+import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.payment.OutgoingPaymentPacket
 import fr.acinq.eclair.payment.relay.Relayer._
-import fr.acinq.eclair.router.Announcements
+import fr.acinq.eclair.router.Router.PublicChannel
+import fr.acinq.eclair.router.{Announcements, Router}
 import fr.acinq.eclair.transactions.DirectedHtlc.{incoming, outgoing}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions._
@@ -3668,6 +3672,70 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(update1a.channelUpdate.timestamp < update2a.channelUpdate.timestamp)
     assert(!update2a.channelUpdate.channelFlags.isEnabled)
     awaitCond(alice.stateName == OFFLINE)
+  }
+
+  test("router test", Tag(ChannelStateTestsTags.DoNotInterceptChannelUpdates)) { f =>
+    import f._
+
+    // both sides use the same listener
+    val localChannelUpdate1 = channelUpdateListener.expectMsgType[LocalChannelUpdate]
+    val localChannelUpdate2 = channelUpdateListener.expectMsgType[LocalChannelUpdate]
+    channelUpdateListener.expectNoMessage()
+
+    val aliceLocalChannelUpdate = if (localChannelUpdate1.remoteNodeId == alice.underlyingActor.remoteNodeId) localChannelUpdate1 else localChannelUpdate2
+
+    val aliceChannelUpdate = alice2bob.expectMsgType[ChannelUpdate]
+    val bobChannelUpdate = bob2alice.expectMsgType[ChannelUpdate]
+
+    assert(aliceLocalChannelUpdate.localAlias == bobChannelUpdate.shortChannelId)
+
+    val watcher = TestProbe()
+    import com.softwaremill.quicklens._
+    val nodeParams = alice.underlyingActor.nodeParams
+      .modify(_.routerConf.routerBroadcastInterval).setTo(1 day) // "disable" auto rebroadcast
+    val router = system.actorOf(Router.props(nodeParams, watcher.ref.toTyped[ZmqWatcher.Command]))
+
+    router ! aliceLocalChannelUpdate
+    val peerConnection = TestProbe()
+    router ! PeerRoutingMessage(peerConnection.ref, alice.underlyingActor.remoteNodeId, bobChannelUpdate)
+
+    val sender = TestProbe()
+    sender.send(router, Router.GetChannels)
+    assert(sender.expectMsgType[Iterable[PublicChannel]].isEmpty)
+    sender.send(router, Router.GetChannelUpdates)
+    assert(sender.expectMsgType[Iterable[ChannelUpdate]].size == 2)
+  }
+
+  test("router test (public channel)", Tag(ChannelStateTestsTags.DoNotInterceptChannelUpdates), Tag(ChannelStateTestsTags.ChannelsPublic)) { f =>
+    import f._
+
+    // both sides use the same listener
+    val localChannelUpdate1 = channelUpdateListener.expectMsgType[LocalChannelUpdate]
+    val localChannelUpdate2 = channelUpdateListener.expectMsgType[LocalChannelUpdate]
+    channelUpdateListener.expectNoMessage()
+
+    val aliceLocalChannelUpdate = if (localChannelUpdate1.remoteNodeId == alice.underlyingActor.remoteNodeId) localChannelUpdate1 else localChannelUpdate2
+
+    val aliceChannelUpdate = alice2bob.expectMsgType[ChannelUpdate]
+    val bobChannelUpdate = bob2alice.expectMsgType[ChannelUpdate]
+
+    assert(aliceLocalChannelUpdate.localAlias == bobChannelUpdate.shortChannelId)
+
+    val watcher = TestProbe()
+    import com.softwaremill.quicklens._
+    val nodeParams = alice.underlyingActor.nodeParams
+      .modify(_.routerConf.routerBroadcastInterval).setTo(1 day) // "disable" auto rebroadcast
+    val router = system.actorOf(Router.props(nodeParams, watcher.ref.toTyped[ZmqWatcher.Command]))
+
+    router ! aliceLocalChannelUpdate
+    val peerConnection = TestProbe()
+    router ! PeerRoutingMessage(peerConnection.ref, alice.underlyingActor.remoteNodeId, bobChannelUpdate)
+
+    val sender = TestProbe()
+    sender.send(router, Router.GetChannels)
+    assert(sender.expectMsgType[Iterable[PublicChannel]].isEmpty)
+    sender.send(router, Router.GetChannelUpdates)
+    assert(sender.expectMsgType[Iterable[ChannelUpdate]].size == 2)
   }
 
 }

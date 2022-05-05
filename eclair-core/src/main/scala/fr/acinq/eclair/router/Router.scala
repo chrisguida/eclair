@@ -398,9 +398,10 @@ object Router {
    *
    * @param nodeId     id of the start node.
    * @param nextNodeId id of the end node.
+   * @param shortChannelId real scid or local alias.
    * @param lastUpdate last update of the channel used for the hop.
    */
-  case class ChannelHop(nodeId: PublicKey, nextNodeId: PublicKey, lastUpdate: ChannelUpdate) extends Hop {
+  case class ChannelHop(shortChannelId: ShortChannelId, nodeId: PublicKey, nextNodeId: PublicKey, lastUpdate: ChannelUpdate) extends Hop {
     override lazy val cltvExpiryDelta: CltvExpiryDelta = lastUpdate.cltvExpiryDelta
 
     override def fee(amount: MilliSatoshi): MilliSatoshi = nodeFee(lastUpdate, amount)

@@ -87,6 +87,8 @@ object ChannelStateTestsTags {
   val ChannelType = "option_channel_type"
   /** If set, channels will use option_zeroconf. */
   val ZeroConf = "zeroconf"
+  /** If set, channel_updates won't be intercepted at the end of the channel setup */
+  val DoNotInterceptChannelUpdates = "do_not_intercept_channel_updates"
 }
 
 trait ChannelStateTestsHelperMethods extends TestKitBase {
@@ -98,7 +100,6 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
                           bob2alice: TestProbe,
                           alice2blockchain: TestProbe,
                           bob2blockchain: TestProbe,
-                          router: TestProbe,
                           relayerA: TestProbe,
                           relayerB: TestProbe,
                           channelUpdateListener: TestProbe,
@@ -123,7 +124,6 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
     val channelUpdateListener = TestProbe()
     system.eventStream.subscribe(channelUpdateListener.ref, classOf[LocalChannelUpdate])
     system.eventStream.subscribe(channelUpdateListener.ref, classOf[LocalChannelDown])
-    val router = TestProbe()
     val finalNodeParamsA = nodeParamsA
       .modify(_.channelConf.dustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceAliceBob))(5000 sat)
       .modify(_.channelConf.dustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceBobAlice))(1000 sat)
@@ -136,7 +136,7 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
       .modify(_.channelConf.maxRemoteDustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceBobAlice))(10000 sat)
     val alice: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(finalNodeParamsA, wallet, finalNodeParamsB.nodeId, alice2blockchain.ref, relayerA.ref, FakeTxPublisherFactory(alice2blockchain), origin_opt = Some(aliceOrigin.ref)), alicePeer.ref)
     val bob: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(finalNodeParamsB, wallet, finalNodeParamsA.nodeId, bob2blockchain.ref, relayerB.ref, FakeTxPublisherFactory(bob2blockchain)), bobPeer.ref)
-    SetupFixture(alice, bob, aliceOrigin, alice2bob, bob2alice, alice2blockchain, bob2blockchain, router, relayerA, relayerB, channelUpdateListener, wallet, alicePeer, bobPeer)
+    SetupFixture(alice, bob, aliceOrigin, alice2bob, bob2alice, alice2blockchain, bob2blockchain, relayerA, relayerB, channelUpdateListener, wallet, alicePeer, bobPeer)
   }
 
   def computeFeatures(setup: SetupFixture, tags: Set[String], channelFlags: ChannelFlags): (LocalParams, LocalParams, SupportedChannelType) = {
@@ -227,17 +227,19 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
     alice2bob.forward(bob)
     bob2alice.expectMsgType[ChannelReady]
     bob2alice.forward(alice)
-    // we don't forward the channel updates, in reality they would be processed by the router
-    alice2bob.expectMsgType[ChannelUpdate]
-    bob2alice.expectMsgType[ChannelUpdate]
     alice2blockchain.expectMsgType[WatchFundingDeeplyBuried]
     bob2blockchain.expectMsgType[WatchFundingDeeplyBuried]
     awaitCond(alice.stateName == NORMAL)
     awaitCond(bob.stateName == NORMAL)
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.availableBalanceForSend == (pushMsat - aliceParams.channelReserve).max(0 msat))
-    // x2 because alice and bob share the same relayer
-    channelUpdateListener.expectMsgType[LocalChannelUpdate]
-    channelUpdateListener.expectMsgType[LocalChannelUpdate]
+    if (!tags.contains(ChannelStateTestsTags.DoNotInterceptChannelUpdates)) {
+      // we don't forward the channel updates, in reality they would be processed by the router
+      alice2bob.expectMsgType[ChannelUpdate]
+      bob2alice.expectMsgType[ChannelUpdate]
+      // x2 because alice and bob share the same relayer
+      channelUpdateListener.expectMsgType[LocalChannelUpdate]
+      channelUpdateListener.expectMsgType[LocalChannelUpdate]
+    }
   }
 
   /** This simulates the behavior of our watcher: it replies to zero-conf watches with a zero block height. */
@@ -264,7 +266,7 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
   def makeCmdAdd(amount: MilliSatoshi, cltvExpiryDelta: CltvExpiryDelta, destination: PublicKey, paymentPreimage: ByteVector32, currentBlockHeight: BlockHeight, upstream: Upstream, replyTo: ActorRef = TestProbe().ref): (ByteVector32, CMD_ADD_HTLC) = {
     val paymentHash: ByteVector32 = Crypto.sha256(paymentPreimage)
     val expiry = cltvExpiryDelta.toCltvExpiry(currentBlockHeight)
-    val cmd = OutgoingPaymentPacket.buildCommand(replyTo, upstream, paymentHash, ChannelHop(null, destination, null) :: Nil, PaymentOnion.createSinglePartPayload(amount, expiry, randomBytes32(), None)).get._1.copy(commit = false)
+    val cmd = OutgoingPaymentPacket.buildCommand(replyTo, upstream, paymentHash, ChannelHop(null, null, destination, null) :: Nil, PaymentOnion.createSinglePartPayload(amount, expiry, randomBytes32(), None)).get._1.copy(commit = false)
     (paymentPreimage, cmd)
   }
 

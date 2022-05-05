@@ -439,7 +439,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
 
     val g = DirectedGraph(edges)
     val Success(route :: Nil) = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000))
-    assert(route.hops === ChannelHop(a, b, uab) :: ChannelHop(b, c, ubc) :: ChannelHop(c, d, ucd) :: ChannelHop(d, e, ude) :: Nil)
+    assert(route.hops === ChannelHop(uab.shortChannelId, a, b, uab) :: ChannelHop(ubc.shortChannelId, b, c, ubc) :: ChannelHop(ucd.shortChannelId, c, d, ucd) :: ChannelHop(ude.shortChannelId, d, e, ude) :: Nil)
   }
 
   test("convert extra hops to assisted channels") {
@@ -1094,7 +1094,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     val amount = 50000 msat
     // These pending HTLCs will have already been taken into account in the edge's `balance_opt` field: findMultiPartRoute
     // should ignore this information.
-    val pendingHtlcs = Seq(Route(10000 msat, ChannelHop(a, b, edge_ab_1.update) :: Nil), Route(5000 msat, ChannelHop(a, b, edge_ab_2.update) :: Nil))
+    val pendingHtlcs = Seq(Route(10000 msat, ChannelHop(edge_ab_1.update.shortChannelId, a, b, edge_ab_1.update) :: Nil), Route(5000 msat, ChannelHop(edge_ab_2.update.shortChannelId, a, b, edge_ab_2.update) :: Nil))
     val Success(routes) = findMultiPartRoute(g, a, b, amount, 1 msat, pendingHtlcs = pendingHtlcs, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000))
     assert(routes.forall(_.length == 1), routes)
     checkRouteAmounts(routes, amount, 0 msat)
@@ -1566,7 +1566,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       makeEdge(6L, d, e, 50 msat, 0, minHtlc = 100 msat, capacity = 25 sat),
     ))
 
-    val pendingHtlcs = Seq(Route(5000 msat, ChannelHop(a, b, edge_ab.update) :: ChannelHop(b, e, edge_be.update) :: Nil))
+    val pendingHtlcs = Seq(Route(5000 msat, ChannelHop(edge_ab.update.shortChannelId, a, b, edge_ab.update) :: ChannelHop(edge_be.update.shortChannelId, b, e, edge_be.update) :: Nil))
     val Success(routes) = findMultiPartRoute(g, a, e, amount, maxFee, pendingHtlcs = pendingHtlcs, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000))
     assert(routes.forall(_.length == 2), routes)
     checkRouteAmounts(routes, amount, maxFee)
