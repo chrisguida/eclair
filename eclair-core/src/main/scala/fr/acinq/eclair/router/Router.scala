@@ -527,6 +527,7 @@ object Router {
   case object GetChannels
   case object GetChannelsMap
   case object GetChannelUpdates
+  case object GetChannelUpdatesMap
   // @formatter:on
 
   // @formatter:off

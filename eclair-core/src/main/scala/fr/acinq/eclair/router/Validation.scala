@@ -319,7 +319,7 @@ object Validation {
         val pc1 = pc.applyChannelUpdate(update)
         val graph1 = d.graph.addEdge(desc, u, pc1.capacity, pc1.getBalanceSameSideAs(u))
         update.left.foreach(_ => log.info("added local shortChannelId={} public={} to the network graph", u.shortChannelId, publicChannel))
-        d.copy(channels = d.channels + (u.shortChannelId -> pc1), privateChannels = d.privateChannels - u.shortChannelId, rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> origins)), graph = graph1)
+        d.copy(channels = d.channels + (u.shortChannelId -> pc1), privateChannels = d.privateChannels - localAlias, rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> origins)), graph = graph1)
       }
     } else if (d.awaiting.keys.exists(c => c.shortChannelId == u.shortChannelId)) {
       // channel is currently being validated
@@ -361,7 +361,7 @@ object Validation {
           update.left.foreach(_ => log.info("removed local localAlias={} public={} from the network graph", localAlias, publicChannel))
           d.graph.removeEdge(desc)
         }
-        d.copy(privateChannels = d.privateChannels + (u.shortChannelId -> pc1), graph = graph1)
+        d.copy(privateChannels = d.privateChannels + (localAlias -> pc1), graph = graph1)
       } else {
         log.debug("added channel_update for localAlias={} public={} flags={} {}", localAlias, publicChannel, u.channelFlags, u)
         sendDecision(origins, GossipDecision.Accepted(u))
@@ -370,7 +370,7 @@ object Validation {
         val pc1 = pc.applyChannelUpdate(update)
         val graph1 = d.graph.addEdge(desc, u, pc1.capacity, pc1.getBalanceSameSideAs(u))
         update.left.foreach(_ => log.info("added local localAlias={} public={} to the network graph", localAlias, publicChannel))
-        d.copy(privateChannels = d.privateChannels + (u.shortChannelId -> pc1), graph = graph1)
+        d.copy(privateChannels = d.privateChannels + (localAlias -> pc1), graph = graph1)
       }
     } else if (db.isPruned(u.shortChannelId) && !StaleChannels.isStale(u)) {
       // the channel was recently pruned, but if we are here, it means that the update is not stale so this is the case

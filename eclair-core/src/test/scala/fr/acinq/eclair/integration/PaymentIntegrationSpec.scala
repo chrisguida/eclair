@@ -114,25 +114,6 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     }
   }
 
-  def awaitAnnouncements(subset: Map[String, Kit], nodes: Int, channels: Int, updates: Int): Unit = {
-    val sender = TestProbe()
-    subset.foreach {
-      case (_, setup) =>
-        awaitCond({
-          sender.send(setup.router, Router.GetNodes)
-          sender.expectMsgType[Iterable[NodeAnnouncement]].size == nodes
-        }, max = 60 seconds, interval = 1 second)
-        awaitCond({
-          sender.send(setup.router, Router.GetChannels)
-          sender.expectMsgType[Iterable[ChannelAnnouncement]].size == channels
-        }, max = 60 seconds, interval = 1 second)
-        awaitCond({
-          sender.send(setup.router, Router.GetChannelUpdates)
-          sender.expectMsgType[Iterable[ChannelUpdate]].size == updates
-        }, max = 60 seconds, interval = 1 second)
-    }
-  }
-
   test("wait for network announcements") {
     // generating more blocks so that all funding txes are buried under at least 6 blocks
     generateBlocks(4)

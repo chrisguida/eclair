@@ -416,7 +416,7 @@ trait ChannelOpenSingleFunder extends FundingHandlers with ErrorHandlers {
     case Event(channelReady: ChannelReady, d@DATA_WAIT_FOR_CHANNEL_READY(commitments, shortChannelId_opt, localAlias, _)) =>
       // used to get the final shortChannelId, used in announcements (if minDepth >= ANNOUNCEMENTS_MINCONF this event will fire instantly)
       blockchain ! WatchFundingDeeplyBuried(self, commitments.commitInput.outPoint.txid, ANNOUNCEMENTS_MINCONF)
-      context.system.eventStream.publish(ShortChannelIdAssigned(self, commitments.channelId, shortChannelId_opt = None, localAlias = localAlias, remoteAlias_opt = channelReady.alias_opt, d.commitments.channelFeatures))
+      context.system.eventStream.publish(ShortChannelIdAssigned(self, commitments.channelId, shortChannelId_opt = shortChannelId_opt, localAlias = localAlias, remoteAlias_opt = channelReady.alias_opt, d.commitments.channelFeatures))
       // we create a channel_update early so that we can use it to send payments through this channel, but it won't be propagated to other nodes since the channel is not yet announced
       val remoteAlias_opt = channelReady.alias_opt
       remoteAlias_opt.foreach(remoteAlias => log.info("received remoteAlias={}", remoteAlias))

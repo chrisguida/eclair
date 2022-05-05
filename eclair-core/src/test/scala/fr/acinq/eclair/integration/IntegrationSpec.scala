@@ -27,8 +27,9 @@ import fr.acinq.eclair.io.{Peer, PeerConnection}
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.router.RouteCalculation.ROUTE_MAX_LENGTH
+import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.router.Router.{MultiPartParams, PathFindingConf, SearchBoundaries, NORMAL => _, State => _}
-import fr.acinq.eclair.wire.protocol.NodeAddress
+import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, NodeAddress, NodeAnnouncement}
 import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, Kit, MilliSatoshi, MilliSatoshiLong, Setup, TestKitBaseClass}
 import grizzled.slf4j.Logging
 import org.json4s.{DefaultFormats, Formats}
@@ -184,6 +185,29 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
     awaitCond(nodes.values.map(_.nodeParams.currentBlockHeight).toSet.size == 1, max = 1 minute, interval = 1 second)
     // and we return it (NB: it could be a different value at this point)
     nodes.values.head.nodeParams.currentBlockHeight
+  }
+
+  def awaitAnnouncements(subset: Map[String, Kit], nodes: Int, channels: Int, updates: Int): Unit = {
+    val sender = TestProbe()
+    subset.foreach {
+      case (node, setup) =>
+        println(s"checking announcements for $node")
+        awaitCond({
+          sender.send(setup.router, Router.GetNodes)
+          sender.expectMsgType[Iterable[NodeAnnouncement]].size == nodes
+        }, max = 60 seconds, interval = 1 second)
+        awaitCond({
+          sender.send(setup.router, Router.GetChannels)
+          sender.expectMsgType[Iterable[ChannelAnnouncement]].size == channels
+        }, max = 60 seconds, interval = 1 second)
+        awaitCond({
+          sender.send(setup.router, Router.GetChannelUpdates)
+          val u = sender.expectMsgType[Iterable[ChannelUpdate]]
+          u.foreach(u.)
+          println(s"u=$u target=$updates")
+          u.size == updates
+        }, max = 60 seconds, interval = 1 second)
+    }
   }
 
 }
