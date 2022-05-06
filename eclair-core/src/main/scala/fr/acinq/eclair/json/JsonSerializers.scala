@@ -303,7 +303,7 @@ object RouteNodeIdsSerializer extends ConvertClassSerializer[Route](route => {
 })
 
 private case class RouteShortChannelIdsJson(amount: MilliSatoshi, shortChannelIds: Seq[ShortChannelId])
-object RouteShortChannelIdsSerializer extends ConvertClassSerializer[Route](route => RouteShortChannelIdsJson(route.amount, route.hops.map(_.lastUpdate.shortChannelId)))
+object RouteShortChannelIdsSerializer extends ConvertClassSerializer[Route](route => RouteShortChannelIdsJson(route.amount, route.hops.map(_.shortChannelId)))
 // @formatter:on
 
 // @formatter:off

@@ -242,23 +242,23 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
    * @return updated routing hints if applicable.
    */
   private def handleUpdate(nodeId: PublicKey, failure: Update, data: WaitingForComplete): Seq[Seq[ExtraHop]] = {
-    data.route.getChannelUpdateForNode(nodeId) match {
-      case Some(u) if u.shortChannelId != failure.update.shortChannelId =>
+    data.route.getChannelHopForNode(nodeId) match {
+      case Some(hop) if hop.shortChannelId != failure.update.shortChannelId =>
         // it is possible that nodes in the route prefer using a different channel (to the same N+1 node) than the one we requested, that's fine
-        log.info(s"received an update for a different channel than the one we asked: requested=${u.shortChannelId} actual=${failure.update.shortChannelId} update=${failure.update}")
-      case Some(u) if Announcements.areSame(u, failure.update) =>
+        log.info(s"received an update for a different channel than the one we asked: requested=${hop.shortChannelId} actual=${failure.update.shortChannelId} update=${failure.update}")
+      case Some(hop) if ChannelSource.areSame(hop.source, ChannelSource.Announcement(failure.update)) =>
         // node returned the exact same update we used, this can happen e.g. if the channel is imbalanced
         // in that case, let's temporarily exclude the channel from future routes, giving it time to recover
         log.info(s"received exact same update from nodeId=$nodeId, excluding the channel from futures routes")
         val nextNodeId = data.route.hops.find(_.nodeId == nodeId).get.nextNodeId
-        router ! ExcludeChannel(ChannelDesc(u.shortChannelId, nodeId, nextNodeId))
-      case Some(u) if PaymentFailure.hasAlreadyFailedOnce(nodeId, data.failures) =>
+        router ! ExcludeChannel(ChannelDesc(hop.shortChannelId, nodeId, nextNodeId))
+      case Some(hop) if PaymentFailure.hasAlreadyFailedOnce(nodeId, data.failures) => // use source type ChannelSource.Network.FailureMessage instead?
         // this node had already given us a new channel update and is still unhappy, it is probably messing with us, let's exclude it
-        log.warning(s"it is the second time nodeId=$nodeId answers with a new update, excluding it: old=$u new=${failure.update}")
+        log.warning(s"it is the second time nodeId=$nodeId answers with a new update, excluding it: old=${hop.source} new=${failure.update}")
         val nextNodeId = data.route.hops.find(_.nodeId == nodeId).get.nextNodeId
-        router ! ExcludeChannel(ChannelDesc(u.shortChannelId, nodeId, nextNodeId))
-      case Some(u) =>
-        log.info(s"got a new update for shortChannelId=${u.shortChannelId}: old=$u new=${failure.update}")
+        router ! ExcludeChannel(ChannelDesc(hop.shortChannelId, nodeId, nextNodeId))
+      case Some(hop) =>
+        log.info(s"got a new update for shortChannelId=${hop.shortChannelId}: old=${hop.source} new=${failure.update}")
       case None =>
         log.error(s"couldn't find a channel update for node=$nodeId, this should never happen")
     }

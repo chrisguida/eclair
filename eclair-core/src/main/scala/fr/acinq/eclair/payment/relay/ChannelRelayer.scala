@@ -65,7 +65,7 @@ object ChannelRelayer {
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[AvailableBalanceChanged](WrappedAvailableBalanceChanged))
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[ShortChannelIdAssigned](WrappedShortChannelIdAssigned))
       context.messageAdapter[IncomingPaymentPacket.ChannelRelayPacket](Relay)
-      Behaviors.withMdc(Logs.mdc(category_opt = Some(Logs.LogCategory.PAYMENT)), mdc) {
+      Behaviors.withMdc(Logs.mdc(category_opt = Some(Logs.LogCategory.PAYMENT), nodeAlias_opt = Some(nodeParams.alias)), mdc) {
         Behaviors.receiveMessage {
           case Relay(channelRelayPacket) =>
             val relayId = UUID.randomUUID()
@@ -90,7 +90,7 @@ object ChannelRelayer {
             replyTo ! Relayer.OutgoingChannels(selected.toSeq)
             Behaviors.same
 
-          case WrappedLocalChannelUpdate(LocalChannelUpdate(_, channelId, realShortChannelId_opt, localAlias, remoteNodeId, _, channelUpdate, commitments)) =>
+          case WrappedLocalChannelUpdate(LocalChannelUpdate(_, channelId, _, localAlias, remoteNodeId, _, channelUpdate, commitments)) =>
             context.log.debug(s"updating local channel info for channelId=$channelId localAlias=$localAlias remoteNodeId=$remoteNodeId channelUpdate={} commitments={}", channelUpdate, commitments)
             val prevChannelUpdate = channels.get(channelId).map(_.channelUpdate)
             val channel = Relayer.OutgoingChannel(remoteNodeId, channelUpdate, prevChannelUpdate, commitments)
@@ -106,10 +106,10 @@ object ChannelRelayer {
             val node2channels1 = node2channels.subtractOne(remoteNodeId, channelId)
             apply(nodeParams, register, channels1, scid2Channels1, node2channels1)
 
-          case WrappedAvailableBalanceChanged(AvailableBalanceChanged(_, channelId, shortChannelId, commitments)) =>
+          case WrappedAvailableBalanceChanged(AvailableBalanceChanged(_, channelId, _, localAlias, commitments)) =>
             val channels1 = channels.get(channelId) match {
               case Some(c: Relayer.OutgoingChannel) =>
-                context.log.debug(s"available balance changed for channelId=$channelId shortChannelId=$shortChannelId availableForSend={} availableForReceive={}", commitments.availableBalanceForSend, commitments.availableBalanceForReceive)
+                context.log.debug(s"available balance changed for channelId=$channelId localAlias=$localAlias availableForSend={} availableForReceive={}", commitments.availableBalanceForSend, commitments.availableBalanceForReceive)
                 channels + (channelId -> c.copy(commitments = commitments))
               case None => channels // we only consider the balance if we have the channel_update
             }

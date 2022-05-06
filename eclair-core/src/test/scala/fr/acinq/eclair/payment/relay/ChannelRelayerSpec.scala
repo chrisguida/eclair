@@ -467,11 +467,11 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     assert(channels1.last.channelUpdate === channelUpdate_bc)
     assert(channels1.last.toChannelBalance === Relayer.ChannelBalance(c, channelUpdate_bc.shortChannelId, 400000 msat, 0 msat, isPublic = false, isEnabled = true))
 
-    channelRelayer ! WrappedAvailableBalanceChanged(AvailableBalanceChanged(null, channelId_bc, channelUpdate_bc.shortChannelId, makeCommitments(channelId_bc, 200000 msat, 500000 msat)))
+    channelRelayer ! WrappedAvailableBalanceChanged(AvailableBalanceChanged(null, channelId_bc, Some(channelUpdate_bc.shortChannelId), channelUpdate_bc.shortChannelId, makeCommitments(channelId_bc, 200000 msat, 500000 msat)))
     val channels2 = getOutgoingChannels(true)
     assert(channels2.last.commitments.availableBalanceForReceive === 500000.msat && channels2.last.commitments.availableBalanceForSend === 200000.msat)
 
-    channelRelayer ! WrappedAvailableBalanceChanged(AvailableBalanceChanged(null, channelId_ab, channelUpdate_ab.shortChannelId, makeCommitments(channelId_ab, 100000 msat, 200000 msat)))
+    channelRelayer ! WrappedAvailableBalanceChanged(AvailableBalanceChanged(null, channelId_ab, Some(channelUpdate_ab.shortChannelId), channelUpdate_ab.shortChannelId, makeCommitments(channelId_ab, 100000 msat, 200000 msat)))
     channelRelayer ! WrappedLocalChannelDown(LocalChannelDown(null, channelId_bc, channelUpdate_bc.shortChannelId, c))
     val channels3 = getOutgoingChannels(true)
     assert(channels3.size === 1 && channels3.head.commitments.availableBalanceForSend === 100000.msat)

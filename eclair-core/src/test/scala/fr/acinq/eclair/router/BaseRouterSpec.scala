@@ -80,6 +80,9 @@ abstract class BaseRouterSpec extends TestKitBaseClass with FixtureAnyFunSuiteLi
   val channelId_ag_private = ShortChannelId(BlockHeight(420000), 5, 0)
   val channelId_gh = ShortChannelId(BlockHeight(420000), 6, 0)
 
+  val alias_ab = ShortChannelId.generateLocalAlias()
+  val alias_ag_private = ShortChannelId.generateLocalAlias()
+
   val chan_ab = channelAnnouncement(channelId_ab, priv_a, priv_b, priv_funding_a, priv_funding_b)
   val chan_bc = channelAnnouncement(channelId_bc, priv_b, priv_c, priv_funding_b, priv_funding_c)
   val chan_cd = channelAnnouncement(channelId_cd, priv_c, priv_d, priv_funding_c, priv_funding_d)
@@ -94,8 +97,8 @@ abstract class BaseRouterSpec extends TestKitBaseClass with FixtureAnyFunSuiteLi
   val update_dc = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_d, c, channelId_cd, CltvExpiryDelta(3), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 4, htlcMaximumMsat = htlcMaximum)
   val update_ef = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_e, f, channelId_ef, CltvExpiryDelta(9), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 8, htlcMaximumMsat = htlcMaximum)
   val update_fe = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_f, e, channelId_ef, CltvExpiryDelta(9), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 8, htlcMaximumMsat = htlcMaximum)
-  val update_ag_private = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, g, channelId_ag_private, CltvExpiryDelta(7), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 10, htlcMaximumMsat = htlcMaximum)
-  val update_ga_private = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_g, a, channelId_ag_private, CltvExpiryDelta(7), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 10, htlcMaximumMsat = htlcMaximum)
+  val update_ag_private = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, g, alias_ag_private, CltvExpiryDelta(7), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 10, htlcMaximumMsat = htlcMaximum)
+  val update_ga_private = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_g, a, alias_ag_private, CltvExpiryDelta(7), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 10, htlcMaximumMsat = htlcMaximum)
   val update_gh = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_g, h, channelId_gh, CltvExpiryDelta(7), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 10, htlcMaximumMsat = htlcMaximum)
   val update_hg = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_h, g, channelId_gh, CltvExpiryDelta(7), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 10, htlcMaximumMsat = htlcMaximum)
 
@@ -106,13 +109,13 @@ abstract class BaseRouterSpec extends TestKitBaseClass with FixtureAnyFunSuiteLi
     // and e --(4)--> f (we are a)
     within(30 seconds) {
       // first we make sure that we correctly resolve channelId+direction to nodeId
-      assert(Router.getDesc(update_ab, chan_ab) === ChannelDesc(chan_ab.shortChannelId, a, b))
-      assert(Router.getDesc(update_bc, chan_bc) === ChannelDesc(chan_bc.shortChannelId, b, c))
-      assert(Router.getDesc(update_cd, chan_cd) === ChannelDesc(chan_cd.shortChannelId, c, d))
-      assert(Router.getDesc(update_ef, chan_ef) === ChannelDesc(chan_ef.shortChannelId, e, f))
-      assert(Router.getDesc(channelId_ag_private, update_ag_private, PrivateChannel(randomBytes32(), a, g, None, None, ChannelMeta(1000 msat, 2000 msat))) === ChannelDesc(channelId_ag_private, a, g))
-      assert(Router.getDesc(channelId_ag_private, update_ag_private, PrivateChannel(randomBytes32(), g, a, None, None, ChannelMeta(2000 msat, 1000 msat))) === ChannelDesc(channelId_ag_private, a, g))
-      assert(Router.getDesc(update_gh, chan_gh) === ChannelDesc(chan_gh.shortChannelId, g, h))
+      assert(ChannelDesc(update_ab, chan_ab) === ChannelDesc(chan_ab.shortChannelId, a, b))
+      assert(ChannelDesc(update_bc, chan_bc) === ChannelDesc(chan_bc.shortChannelId, b, c))
+      assert(ChannelDesc(update_cd, chan_cd) === ChannelDesc(chan_cd.shortChannelId, c, d))
+      assert(ChannelDesc(update_ef, chan_ef) === ChannelDesc(chan_ef.shortChannelId, e, f))
+      assert(ChannelDesc(update_ag_private, PrivateChannel(channelId_ag_private, randomBytes32(), a, g, None, None, ChannelMeta(1000 msat, 2000 msat))) === ChannelDesc(channelId_ag_private, a, g))
+      assert(ChannelDesc(update_ag_private, PrivateChannel(channelId_ag_private, randomBytes32(), g, a, None, None, ChannelMeta(2000 msat, 1000 msat))) === ChannelDesc(channelId_ag_private, a, g))
+      assert(ChannelDesc(update_gh, chan_gh) === ChannelDesc(chan_gh.shortChannelId, g, h))
 
       // let's set up the router
       val sender = TestProbe()
@@ -150,7 +153,7 @@ abstract class BaseRouterSpec extends TestKitBaseClass with FixtureAnyFunSuiteLi
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_gh))
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_hg))
       // then private channels
-      sender.send(router, LocalChannelUpdate(sender.ref, randomBytes32(), Some(channelId_ag_private), channelId_ag_private, g, None, update_ag_private, CommitmentsSpec.makeCommitments(30000000 msat, 8000000 msat, a, g, announceChannel = false)))
+      sender.send(router, LocalChannelUpdate(sender.ref, randomBytes32(), Some(channelId_ag_private), alias_ag_private, g, None, update_ag_private, CommitmentsSpec.makeCommitments(30000000 msat, 8000000 msat, a, g, announceChannel = false)))
       // watcher receives the get tx requests
       assert(watcher.expectMsgType[ValidateRequest].ann === chan_ab)
       assert(watcher.expectMsgType[ValidateRequest].ann === chan_bc)

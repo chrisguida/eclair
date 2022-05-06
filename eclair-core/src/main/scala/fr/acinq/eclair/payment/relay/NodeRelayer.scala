@@ -58,7 +58,7 @@ object NodeRelayer {
    */
   def apply(nodeParams: NodeParams, register: akka.actor.ActorRef, outgoingPaymentFactory: NodeRelay.OutgoingPaymentFactory, children: Map[PaymentKey, ActorRef[NodeRelay.Command]] = Map.empty): Behavior[Command] =
     Behaviors.setup { context =>
-      Behaviors.withMdc(Logs.mdc(category_opt = Some(Logs.LogCategory.PAYMENT)), mdc) {
+      Behaviors.withMdc(Logs.mdc(category_opt = Some(Logs.LogCategory.PAYMENT), nodeAlias_opt = Some(nodeParams.alias)), mdc) {
         Behaviors.receiveMessage {
           case Relay(nodeRelayPacket) =>
             val htlcIn = nodeRelayPacket.add

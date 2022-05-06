@@ -355,7 +355,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
       Commitments.sendAdd(d.commitments, c, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf) match {
         case Right((commitments1, add)) =>
           if (c.commit) self ! CMD_SIGN()
-          context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.localAlias, commitments1))
+          context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortChannelId_opt, d.localAlias, commitments1))
           handleCommandSuccess(c, d.copy(commitments = commitments1)) sending add
         case Left(cause) => handleAddHtlcCommandError(c, cause, Some(d.channelUpdate))
       }
@@ -370,7 +370,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
       Commitments.sendFulfill(d.commitments, c) match {
         case Right((commitments1, fulfill)) =>
           if (c.commit) self ! CMD_SIGN()
-          context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.localAlias, commitments1))
+          context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortChannelId_opt, d.localAlias, commitments1))
           handleCommandSuccess(c, d.copy(commitments = commitments1)) sending fulfill
         case Left(cause) =>
           // we acknowledge the command right away in case of failure
@@ -390,7 +390,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
       Commitments.sendFail(d.commitments, c, nodeParams.privateKey) match {
         case Right((commitments1, fail)) =>
           if (c.commit) self ! CMD_SIGN()
-          context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.localAlias, commitments1))
+          context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortChannelId_opt, d.localAlias, commitments1))
           handleCommandSuccess(c, d.copy(commitments = commitments1)) sending fail
         case Left(cause) =>
           // we acknowledge the command right away in case of failure
@@ -401,7 +401,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
       Commitments.sendFailMalformed(d.commitments, c) match {
         case Right((commitments1, fail)) =>
           if (c.commit) self ! CMD_SIGN()
-          context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.localAlias, commitments1))
+          context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortChannelId_opt, d.localAlias, commitments1))
           handleCommandSuccess(c, d.copy(commitments = commitments1)) sending fail
         case Left(cause) =>
           // we acknowledge the command right away in case of failure
@@ -424,7 +424,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
       Commitments.sendFee(d.commitments, c, nodeParams.onChainFeeConf) match {
         case Right((commitments1, fee)) =>
           if (c.commit) self ! CMD_SIGN()
-          context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.localAlias, commitments1))
+          context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortChannelId_opt, d.localAlias, commitments1))
           handleCommandSuccess(c, d.copy(commitments = commitments1)) sending fee
         case Left(cause) => handleCommandError(cause, c)
       }
@@ -481,7 +481,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
           }
           if (d.commitments.availableBalanceForSend != commitments1.availableBalanceForSend) {
             // we send this event only when our balance changes
-            context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.localAlias, commitments1))
+            context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortChannelId_opt, d.localAlias, commitments1))
           }
           context.system.eventStream.publish(ChannelSignatureReceived(self, commitments1))
           stay() using d.copy(commitments = commitments1) storing() sending revocation

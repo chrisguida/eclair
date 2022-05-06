@@ -89,7 +89,8 @@ object NodeRelay {
       Behaviors.withMdc(Logs.mdc(
         category_opt = Some(Logs.LogCategory.PAYMENT),
         parentPaymentId_opt = Some(relayId), // for a node relay, we use the same identifier for the whole relay itself, and the outgoing payment
-        paymentHash_opt = Some(paymentHash))) {
+        paymentHash_opt = Some(paymentHash),
+        nodeAlias_opt = Some(nodeParams.alias))) {
         context.log.info("relaying payment relayId={}", relayId)
         val mppFsmAdapters = {
           context.messageAdapter[MultiPartPaymentFSM.ExtraPaymentReceived[HtlcPart]](WrappedMultiPartExtraPaymentReceived)

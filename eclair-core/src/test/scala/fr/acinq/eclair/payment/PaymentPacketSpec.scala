@@ -179,7 +179,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     assert(inner_c.paymentMetadata === None)
 
     // c forwards the trampoline payment to d.
-    val Success((amount_d, expiry_d, onion_d)) = buildPaymentPacket(paymentHash, ChannelHop(channelUpdate_cd.shortChannelId, c, d, channelUpdate_cd) :: Nil, PaymentOnion.createTrampolinePayload(amount_cd, amount_cd, expiry_cd, randomBytes32(), packet_d))
+    val Success((amount_d, expiry_d, onion_d)) = buildPaymentPacket(paymentHash, ChannelHop.fromChannelUpdate(c, d, channelUpdate_cd) :: Nil, PaymentOnion.createTrampolinePayload(amount_cd, amount_cd, expiry_cd, randomBytes32(), packet_d))
     assert(amount_d === amount_cd)
     assert(expiry_d === expiry_cd)
     val add_d = UpdateAddHtlc(randomBytes32(), 3, amount_d, paymentHash, expiry_d, onion_d.packet)
@@ -197,7 +197,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     assert(inner_d.paymentMetadata === None)
 
     // d forwards the trampoline payment to e.
-    val Success((amount_e, expiry_e, onion_e)) = buildPaymentPacket(paymentHash, ChannelHop(channelUpdate_de.shortChannelId, d, e, channelUpdate_de) :: Nil, PaymentOnion.createTrampolinePayload(amount_de, amount_de, expiry_de, randomBytes32(), packet_e))
+    val Success((amount_e, expiry_e, onion_e)) = buildPaymentPacket(paymentHash, ChannelHop.fromChannelUpdate(d, e, channelUpdate_de) :: Nil, PaymentOnion.createTrampolinePayload(amount_de, amount_de, expiry_de, randomBytes32(), packet_e))
     assert(amount_e === amount_de)
     assert(expiry_e === expiry_de)
     val add_e = UpdateAddHtlc(randomBytes32(), 4, amount_e, paymentHash, expiry_e, onion_e.packet)
@@ -240,7 +240,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     assert(inner_c.paymentSecret === None)
 
     // c forwards the trampoline payment to d.
-    val Success((amount_d, expiry_d, onion_d)) = buildPaymentPacket(paymentHash, ChannelHop(channelUpdate_cd.shortChannelId, c, d, channelUpdate_cd) :: Nil, PaymentOnion.createTrampolinePayload(amount_cd, amount_cd, expiry_cd, randomBytes32(), packet_d))
+    val Success((amount_d, expiry_d, onion_d)) = buildPaymentPacket(paymentHash, ChannelHop.fromChannelUpdate(c, d, channelUpdate_cd) :: Nil, PaymentOnion.createTrampolinePayload(amount_cd, amount_cd, expiry_cd, randomBytes32(), packet_d))
     assert(amount_d === amount_cd)
     assert(expiry_d === expiry_cd)
     val add_d = UpdateAddHtlc(randomBytes32(), 3, amount_d, paymentHash, expiry_d, onion_d.packet)
@@ -309,11 +309,11 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     val Right(ChannelRelayPacket(_, _, packet_c)) = decrypt(UpdateAddHtlc(randomBytes32(), 1, firstAmount, paymentHash, firstExpiry, onion.packet), priv_b.privateKey)
     val Right(NodeRelayPacket(_, _, _, packet_d)) = decrypt(UpdateAddHtlc(randomBytes32(), 2, amount_bc, paymentHash, expiry_bc, packet_c), priv_c.privateKey)
     // c forwards the trampoline payment to d.
-    val Success((amount_d, expiry_d, onion_d)) = buildPaymentPacket(paymentHash, ChannelHop(channelUpdate_cd.shortChannelId, c, d, channelUpdate_cd) :: Nil, PaymentOnion.createTrampolinePayload(amount_cd, amount_cd, expiry_cd, randomBytes32(), packet_d))
+    val Success((amount_d, expiry_d, onion_d)) = buildPaymentPacket(paymentHash, ChannelHop.fromChannelUpdate(c, d, channelUpdate_cd) :: Nil, PaymentOnion.createTrampolinePayload(amount_cd, amount_cd, expiry_cd, randomBytes32(), packet_d))
     val Right(NodeRelayPacket(_, _, _, packet_e)) = decrypt(UpdateAddHtlc(randomBytes32(), 3, amount_d, paymentHash, expiry_d, onion_d.packet), priv_d.privateKey)
     // d forwards an invalid amount to e (the outer total amount doesn't match the inner amount).
     val invalidTotalAmount = amount_de + 100.msat
-    val Success((amount_e, expiry_e, onion_e)) = buildPaymentPacket(paymentHash, ChannelHop(channelUpdate_de.shortChannelId, d, e, channelUpdate_de) :: Nil, PaymentOnion.createTrampolinePayload(amount_de, invalidTotalAmount, expiry_de, randomBytes32(), packet_e))
+    val Success((amount_e, expiry_e, onion_e)) = buildPaymentPacket(paymentHash, ChannelHop.fromChannelUpdate(d, e, channelUpdate_de) :: Nil, PaymentOnion.createTrampolinePayload(amount_de, invalidTotalAmount, expiry_de, randomBytes32(), packet_e))
     val Left(failure) = decrypt(UpdateAddHtlc(randomBytes32(), 4, amount_e, paymentHash, expiry_e, onion_e.packet), priv_e.privateKey)
     assert(failure === FinalIncorrectHtlcAmount(invalidTotalAmount))
   }
@@ -324,11 +324,11 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     val Right(ChannelRelayPacket(_, _, packet_c)) = decrypt(UpdateAddHtlc(randomBytes32(), 1, firstAmount, paymentHash, firstExpiry, onion.packet), priv_b.privateKey)
     val Right(NodeRelayPacket(_, _, _, packet_d)) = decrypt(UpdateAddHtlc(randomBytes32(), 2, amount_bc, paymentHash, expiry_bc, packet_c), priv_c.privateKey)
     // c forwards the trampoline payment to d.
-    val Success((amount_d, expiry_d, onion_d)) = buildPaymentPacket(paymentHash, ChannelHop(channelUpdate_cd.shortChannelId, c, d, channelUpdate_cd) :: Nil, PaymentOnion.createTrampolinePayload(amount_cd, amount_cd, expiry_cd, randomBytes32(), packet_d))
+    val Success((amount_d, expiry_d, onion_d)) = buildPaymentPacket(paymentHash, ChannelHop.fromChannelUpdate(c, d, channelUpdate_cd) :: Nil, PaymentOnion.createTrampolinePayload(amount_cd, amount_cd, expiry_cd, randomBytes32(), packet_d))
     val Right(NodeRelayPacket(_, _, _, packet_e)) = decrypt(UpdateAddHtlc(randomBytes32(), 3, amount_d, paymentHash, expiry_d, onion_d.packet), priv_d.privateKey)
     // d forwards an invalid expiry to e (the outer expiry doesn't match the inner expiry).
     val invalidExpiry = expiry_de - CltvExpiryDelta(12)
-    val Success((amount_e, expiry_e, onion_e)) = buildPaymentPacket(paymentHash, ChannelHop(channelUpdate_de.shortChannelId, d, e, channelUpdate_de) :: Nil, PaymentOnion.createTrampolinePayload(amount_de, amount_de, invalidExpiry, randomBytes32(), packet_e))
+    val Success((amount_e, expiry_e, onion_e)) = buildPaymentPacket(paymentHash, ChannelHop.fromChannelUpdate(d, e, channelUpdate_de) :: Nil, PaymentOnion.createTrampolinePayload(amount_de, amount_de, invalidExpiry, randomBytes32(), packet_e))
     val Left(failure) = decrypt(UpdateAddHtlc(randomBytes32(), 4, amount_e, paymentHash, expiry_e, onion_e.packet), priv_e.privateKey)
     assert(failure === FinalIncorrectCltvExpiry(invalidExpiry))
   }
@@ -392,10 +392,10 @@ object PaymentPacketSpec {
   // simple route a -> b -> c -> d -> e
 
   val hops =
-    ChannelHop(channelUpdate_ab.shortChannelId, a, b, channelUpdate_ab) ::
-      ChannelHop(channelUpdate_bc.shortChannelId, b, c, channelUpdate_bc) ::
-      ChannelHop(channelUpdate_cd.shortChannelId, c, d, channelUpdate_cd) ::
-      ChannelHop(channelUpdate_de.shortChannelId, d, e, channelUpdate_de) :: Nil
+    ChannelHop.fromChannelUpdate(a, b, channelUpdate_ab) ::
+      ChannelHop.fromChannelUpdate(b, c, channelUpdate_bc) ::
+      ChannelHop.fromChannelUpdate(c, d, channelUpdate_cd) ::
+      ChannelHop.fromChannelUpdate(d, e, channelUpdate_de) :: Nil
 
   val finalAmount = 42000000 msat
   val currentBlockCount = 400000
@@ -407,15 +407,15 @@ object PaymentPacketSpec {
 
   val expiry_de = finalExpiry
   val amount_de = finalAmount
-  val fee_d = nodeFee(channelUpdate_de, amount_de)
+  val fee_d = nodeFee(channelUpdate_de.relayFees, amount_de)
 
   val expiry_cd = expiry_de + channelUpdate_de.cltvExpiryDelta
   val amount_cd = amount_de + fee_d
-  val fee_c = nodeFee(channelUpdate_cd, amount_cd)
+  val fee_c = nodeFee(channelUpdate_cd.relayFees, amount_cd)
 
   val expiry_bc = expiry_cd + channelUpdate_cd.cltvExpiryDelta
   val amount_bc = amount_cd + fee_c
-  val fee_b = nodeFee(channelUpdate_bc, amount_bc)
+  val fee_b = nodeFee(channelUpdate_bc.relayFees, amount_bc)
 
   val expiry_ab = expiry_bc + channelUpdate_bc.cltvExpiryDelta
   val amount_ab = amount_bc + fee_b
@@ -431,7 +431,7 @@ object PaymentPacketSpec {
       NodeHop(d, e, channelUpdate_de.cltvExpiryDelta, fee_d) :: Nil
 
   val trampolineChannelHops =
-    ChannelHop(channelUpdate_ab.shortChannelId, a, b, channelUpdate_ab) ::
-      ChannelHop(channelUpdate_bc.shortChannelId, b, c, channelUpdate_bc) :: Nil
+    ChannelHop.fromChannelUpdate(a, b, channelUpdate_ab) ::
+      ChannelHop.fromChannelUpdate(b, c, channelUpdate_bc) :: Nil
 
 }
