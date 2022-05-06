@@ -90,12 +90,12 @@ object ChannelRelayer {
             replyTo ! Relayer.OutgoingChannels(selected.toSeq)
             Behaviors.same
 
-          case WrappedLocalChannelUpdate(LocalChannelUpdate(_, channelId, shortChannelId, remoteNodeId, _, channelUpdate, commitments)) =>
-            context.log.debug(s"updating local channel info for channelId=$channelId shortChannelId=$shortChannelId remoteNodeId=$remoteNodeId channelUpdate={} commitments={}", channelUpdate, commitments)
+          case WrappedLocalChannelUpdate(LocalChannelUpdate(_, channelId, realShortChannelId_opt, localAlias, remoteNodeId, _, channelUpdate, commitments)) =>
+            context.log.debug(s"updating local channel info for channelId=$channelId localAlias=$localAlias remoteNodeId=$remoteNodeId channelUpdate={} commitments={}", channelUpdate, commitments)
             val prevChannelUpdate = channels.get(channelId).map(_.channelUpdate)
             val channel = Relayer.OutgoingChannel(remoteNodeId, channelUpdate, prevChannelUpdate, commitments)
             val channels1 = channels + (channelId -> channel)
-            val scid2channels1 = scid2channels + (channelUpdate.shortChannelId -> channelId)
+            val scid2channels1 = scid2channels + (localAlias -> channelId)
             val node2channels1 = node2channels.addOne(remoteNodeId, channelId)
             apply(nodeParams, register, channels1, scid2channels1, node2channels1)
 

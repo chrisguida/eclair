@@ -3696,8 +3696,10 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val router = system.actorOf(Router.props(nodeParams, watcher.ref.toTyped[ZmqWatcher.Command]))
 
     router ! aliceLocalChannelUpdate
+    router ! Router.PrintChannelUpdates
     val peerConnection = TestProbe()
     router ! PeerRoutingMessage(peerConnection.ref, alice.underlyingActor.remoteNodeId, bobChannelUpdate)
+    router ! Router.PrintChannelUpdates
 
     val sender = TestProbe()
     sender.send(router, Router.GetChannels)

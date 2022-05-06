@@ -29,7 +29,7 @@ import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.router.RouteCalculation.ROUTE_MAX_LENGTH
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.router.Router.{MultiPartParams, PathFindingConf, SearchBoundaries, NORMAL => _, State => _}
-import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, NodeAddress, NodeAnnouncement}
+import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
 import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, Kit, MilliSatoshi, MilliSatoshiLong, Setup, TestKitBaseClass}
 import grizzled.slf4j.Logging
 import org.json4s.{DefaultFormats, Formats}
@@ -201,13 +201,36 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
           sender.expectMsgType[Iterable[ChannelAnnouncement]].size == channels
         }, max = 60 seconds, interval = 1 second)
         awaitCond({
+          setup.router ! Router.PrintChannelUpdates
           sender.send(setup.router, Router.GetChannelUpdates)
           val u = sender.expectMsgType[Iterable[ChannelUpdate]]
-          u.foreach(u.)
-          println(s"u=$u target=$updates")
+          println(s"u=${u.size} target=$updates")
           u.size == updates
         }, max = 60 seconds, interval = 1 second)
     }
   }
 
+  def awaitAnnouncements(subset: Map[String, Kit], nodes: Int, channels: Int, publicUpdates: Int, privateUpdates: Int = 0): Unit = {
+    val sender = TestProbe()
+    subset.foreach {
+      case (node, setup) =>
+        println(s"checking announcements for $node")
+
+        awaitCond({
+          sender.send(setup.router, Router.GetRouterData)
+          val d = sender.expectMsgType[Router.Data]
+
+          val nodeCount = d.nodes.size
+          val channelCount = d.channels.size
+          val publicUpdateCount = d.channels.values.flatMap(c => c.update_1_opt.toSeq ++ c.update_2_opt.toSeq).size
+          val privateUpdateCount = d.privateChannels.values.flatMap(c => c.update_1_opt.toSeq ++ c.update_2_opt.toSeq).size
+
+          println(s"nodes=$nodeCount channels=$channelCount publicUpdates=$publicUpdateCount privateUpdates=$privateUpdateCount")
+
+          nodeCount == nodes && channelCount == channels && publicUpdateCount == publicUpdates && privateUpdateCount == privateUpdates
+
+        }, max = 60 seconds, interval = 1 second)
+
+    }
+  }
 }

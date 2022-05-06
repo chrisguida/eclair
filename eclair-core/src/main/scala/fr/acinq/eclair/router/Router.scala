@@ -24,6 +24,7 @@ import akka.event.Logging.MDC
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi}
 import fr.acinq.eclair.Logs.LogCategory
+import fr.acinq.eclair.ShortChannelId.outputIndex
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{ValidateResult, WatchExternalChannelSpent, WatchExternalChannelSpentTriggered}
@@ -100,7 +101,7 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
 
     log.info(s"initialization completed, ready to process messages")
     Try(initialized.map(_.success(Done)))
-    startWith(NORMAL, Data(initNodes, initChannels, Stash(Map.empty, Map.empty), rebroadcast = Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty), awaiting = Map.empty, privateChannels = Map.empty, excludedChannels = Set.empty, graph, sync = Map.empty))
+    startWith(NORMAL, Data(initNodes, initChannels, Stash(Map.empty, Map.empty), rebroadcast = Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty), awaiting = Map.empty, privateChannels = Map.empty, realScid2Alias = Map.empty, excludedChannels = Set.empty, graph, sync = Map.empty))
   }
 
   when(NORMAL) {
@@ -191,6 +192,14 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
       sender() ! updates
       stay()
 
+    case Event(PrintChannelUpdates, d) =>
+      println("public:")
+      d.channels.foreach { case (scid, pc) => println(s"$scid -> ${pc.channelId} updates=${(pc.update_1_opt.toSeq ++ pc.update_2_opt.toSeq).size}")}
+      println("private:")
+      d.privateChannels.foreach { case (scid, pc) => println(s"$scid -> ${pc.channelId} updates=${(pc.update_1_opt.toSeq ++ pc.update_2_opt.toSeq).size}")}
+      println("---------------------------------------------------")
+      stay()
+
     case Event(GetRouterData, d) =>
       sender() ! d
       stay()
@@ -260,12 +269,13 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
 
   override def mdc(currentMessage: Any): MDC = {
     val category_opt = LogCategory(currentMessage)
-    currentMessage match {
-      case s: SendChannelQuery => Logs.mdc(category_opt, remoteNodeId_opt = Some(s.remoteNodeId))
-      case prm: PeerRoutingMessage => Logs.mdc(category_opt, remoteNodeId_opt = Some(prm.remoteNodeId))
-      case lcu: LocalChannelUpdate => Logs.mdc(category_opt, remoteNodeId_opt = Some(lcu.remoteNodeId))
-      case _ => Logs.mdc(category_opt)
+    val remoteNodeId_opt = currentMessage match {
+      case s: SendChannelQuery => Some(s.remoteNodeId)
+      case prm: PeerRoutingMessage => Some(prm.remoteNodeId)
+      case lcu: LocalChannelUpdate => Some(lcu.remoteNodeId)
+      case _ => None
     }
+    Logs.mdc(category_opt, remoteNodeId_opt = remoteNodeId_opt, nodeAlias_opt = Some(nodeParams.alias))
   }
 }
 
@@ -322,6 +332,7 @@ object Router {
     update_1_opt.foreach(u => assert(u.channelFlags.isNode1))
     update_2_opt.foreach(u => assert(!u.channelFlags.isNode1))
 
+    def channelId: ByteVector32 = toLongId(fundingTxid.reverse, outputIndex(ann.shortChannelId))
     def getNodeIdSameSideAs(u: ChannelUpdate): PublicKey = if (u.channelFlags.isNode1) ann.nodeId1 else ann.nodeId2
     def getChannelUpdateSameSideAs(u: ChannelUpdate): Option[ChannelUpdate] = if (u.channelFlags.isNode1) update_1_opt else update_2_opt
     def getBalanceSameSideAs(u: ChannelUpdate): Option[MilliSatoshi] = if (u.channelFlags.isNode1) meta_opt.map(_.balance1) else meta_opt.map(_.balance2)
@@ -336,7 +347,7 @@ object Router {
       case Right(rcu) => updateChannelUpdateSameSideAs(rcu.channelUpdate)
     }
   }
-  case class PrivateChannel(localNodeId: PublicKey, remoteNodeId: PublicKey, update_1_opt: Option[ChannelUpdate], update_2_opt: Option[ChannelUpdate], meta: ChannelMeta) extends ChannelDetails {
+  case class PrivateChannel(channelId: ByteVector32, localNodeId: PublicKey, remoteNodeId: PublicKey, update_1_opt: Option[ChannelUpdate], update_2_opt: Option[ChannelUpdate], meta: ChannelMeta) extends ChannelDetails {
     val (nodeId1, nodeId2) = if (Announcements.isNode1(localNodeId, remoteNodeId)) (localNodeId, remoteNodeId) else (remoteNodeId, localNodeId)
     val capacity: Satoshi = (meta.balance1 + meta.balance2).truncateToSatoshi
 
@@ -527,7 +538,7 @@ object Router {
   case object GetChannels
   case object GetChannelsMap
   case object GetChannelUpdates
-  case object GetChannelUpdatesMap
+  case object PrintChannelUpdates
   // @formatter:on
 
   // @formatter:off
@@ -570,12 +581,21 @@ object Router {
     def started: Boolean = totalQueries > 0
   }
 
+  // @formatter:off
+  sealed trait ChannelUpdateId
+  object ChannelUpdateId {
+    final case class RealScid(scid: ShortChannelId) extends ChannelUpdateId
+    final case class LocalAlias(alias: ShortChannelId) extends ChannelUpdateId
+  }
+  // @formatter:on
+
   case class Data(nodes: Map[PublicKey, NodeAnnouncement],
                   channels: SortedMap[ShortChannelId, PublicChannel],
                   stash: Stash,
                   rebroadcast: Rebroadcast,
                   awaiting: Map[ChannelAnnouncement, Seq[RemoteGossip]], // note: this is a seq because we want to preserve order: first actor is the one who we need to send a tcp-ack when validation is done
                   privateChannels: Map[ShortChannelId, PrivateChannel], // indexed by *local alias*
+                  realScid2Alias: Map[ShortChannelId, ShortChannelId],
                   excludedChannels: Set[ChannelDesc], // those channels are temporarily excluded from route calculation, because their node returned a TemporaryChannelFailure
                   graph: DirectedGraph,
                   sync: Map[PublicKey, Syncing] // keep tracks of channel range queries sent to each peer. If there is an entry in the map, it means that there is an ongoing query for which we have not yet received an 'end' message

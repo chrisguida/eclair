@@ -118,7 +118,8 @@ object Validation {
               ctx.self ! nodeAnn
             }
             // public channels that haven't yet been announced are considered as private channels
-            val channelMeta_opt = d0.privateChannels.get(c.shortChannelId).map(_.meta)
+            val localAlias_opt = d0.realScid2Alias.get(c.shortChannelId)
+            val channelMeta_opt = localAlias_opt.flatMap(d0.privateChannels.get).map(_.meta)
             Some(PublicChannel(c, tx.txid, capacity, None, None, channelMeta_opt))
           }
         case ValidateResult(c, Right((tx, fundingTxStatus: UtxoStatus.Spent))) =>
@@ -259,8 +260,8 @@ object Validation {
         }
         // "[remote] MUST set the short_channel_id to either an alias it has received from the peer, or the real channel
         // short_channel_id." (BOLT 7)
-        // in other words, the remote channel_update uses local alias
-        (rcu.channelUpdate.shortChannelId, rcu.channelUpdate, rcu.origins)
+        val localAlias = d.realScid2Alias.getOrElse(rcu.channelUpdate.shortChannelId, rcu.channelUpdate.shortChannelId)
+        (localAlias, rcu.channelUpdate, rcu.origins)
     }
     if (d.channels.contains(u.shortChannelId)) {
       // related channel is already known (note: this means no related channel_update is in the stash)
@@ -416,27 +417,31 @@ object Validation {
         // channel has already been announced and router knows about it, we can process the channel_update
         handleChannelUpdate(d, db, routerConf, Left(lcu))
       case None =>
+        val d1 = lcu.realShortChannelId_opt match {
+          case Some(scid) => d.copy(realScid2Alias = d.realScid2Alias + (scid -> lcu.localAlias))
+          case None => d
+        }
         lcu.channelAnnouncement_opt match {
-          case Some(c) if d.awaiting.contains(c) =>
+          case Some(c) if d1.awaiting.contains(c) =>
             // channel is currently being verified, we can process the channel_update right away (it will be stashed)
-            handleChannelUpdate(d, db, routerConf, Left(lcu))
+            handleChannelUpdate(d1, db, routerConf, Left(lcu))
           case Some(c) =>
             // channel wasn't announced but here is the announcement, we will process it *before* the channel_update
             watcher ! ValidateRequest(ctx.self, c)
-            val d1 = d.copy(awaiting = d.awaiting + (c -> Nil)) // no origin
+            val d2 = d1.copy(awaiting = d1.awaiting + (c -> Nil)) // no origin
             // maybe the local channel was pruned (can happen if we were disconnected for more than 2 weeks)
             db.removeFromPruned(c.shortChannelId)
-            handleChannelUpdate(d1, db, routerConf, Left(lcu))
-          case None if d.privateChannels.contains(lcu.localAlias) =>
+            handleChannelUpdate(d2, db, routerConf, Left(lcu))
+          case None if d1.privateChannels.contains(lcu.localAlias) =>
             // channel isn't announced but we already know about it, we can process the channel_update
-            handleChannelUpdate(d, db, routerConf, Left(lcu))
+            handleChannelUpdate(d1, db, routerConf, Left(lcu))
           case None =>
             // channel isn't announced and we never heard of it (maybe it is a private channel or maybe it is a public channel that doesn't yet have 6 confirmations)
             // let's create a corresponding private channel and process the channel_update
             log.debug("adding unannounced local channel to remote={} localAlias={}", lcu.remoteNodeId, lcu.localAlias)
-            val pc = PrivateChannel(localNodeId, lcu.remoteNodeId, None, None, ChannelMeta(0 msat, 0 msat)).updateBalances(lcu.commitments)
-            val d1 = d.copy(privateChannels = d.privateChannels + (lcu.localAlias -> pc))
-            handleChannelUpdate(d1, db, routerConf, Left(lcu))
+            val pc = PrivateChannel(lcu.channelId, localNodeId, lcu.remoteNodeId, None, None, ChannelMeta(0 msat, 0 msat)).updateBalances(lcu.commitments)
+            val d2 = d1.copy(privateChannels = d1.privateChannels + (lcu.localAlias -> pc))
+            handleChannelUpdate(d2, db, routerConf, Left(lcu))
         }
     }
   }

@@ -110,8 +110,8 @@ abstract class BaseRouterSpec extends TestKitBaseClass with FixtureAnyFunSuiteLi
       assert(Router.getDesc(update_bc, chan_bc) === ChannelDesc(chan_bc.shortChannelId, b, c))
       assert(Router.getDesc(update_cd, chan_cd) === ChannelDesc(chan_cd.shortChannelId, c, d))
       assert(Router.getDesc(update_ef, chan_ef) === ChannelDesc(chan_ef.shortChannelId, e, f))
-      assert(Router.getDesc(channelId_ag_private, update_ag_private, PrivateChannel(a, g, None, None, ChannelMeta(1000 msat, 2000 msat))) === ChannelDesc(channelId_ag_private, a, g))
-      assert(Router.getDesc(channelId_ag_private, update_ag_private, PrivateChannel(g, a, None, None, ChannelMeta(2000 msat, 1000 msat))) === ChannelDesc(channelId_ag_private, a, g))
+      assert(Router.getDesc(channelId_ag_private, update_ag_private, PrivateChannel(randomBytes32(), a, g, None, None, ChannelMeta(1000 msat, 2000 msat))) === ChannelDesc(channelId_ag_private, a, g))
+      assert(Router.getDesc(channelId_ag_private, update_ag_private, PrivateChannel(randomBytes32(), g, a, None, None, ChannelMeta(2000 msat, 1000 msat))) === ChannelDesc(channelId_ag_private, a, g))
       assert(Router.getDesc(update_gh, chan_gh) === ChannelDesc(chan_gh.shortChannelId, g, h))
 
       // let's set up the router
@@ -150,7 +150,7 @@ abstract class BaseRouterSpec extends TestKitBaseClass with FixtureAnyFunSuiteLi
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_gh))
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_hg))
       // then private channels
-      sender.send(router, LocalChannelUpdate(sender.ref, randomBytes32(), channelId_ag_private, g, None, update_ag_private, CommitmentsSpec.makeCommitments(30000000 msat, 8000000 msat, a, g, announceChannel = false)))
+      sender.send(router, LocalChannelUpdate(sender.ref, randomBytes32(), Some(channelId_ag_private), channelId_ag_private, g, None, update_ag_private, CommitmentsSpec.makeCommitments(30000000 msat, 8000000 msat, a, g, announceChannel = false)))
       // watcher receives the get tx requests
       assert(watcher.expectMsgType[ValidateRequest].ann === chan_ab)
       assert(watcher.expectMsgType[ValidateRequest].ann === chan_bc)
