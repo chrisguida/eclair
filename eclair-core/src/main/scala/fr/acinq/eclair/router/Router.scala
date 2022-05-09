@@ -104,7 +104,7 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
 
     log.info(s"initialization completed, ready to process messages")
     Try(initialized.map(_.success(Done)))
-    startWith(NORMAL, Data(initNodes, initChannels, Stash(Map.empty, Map.empty), rebroadcast = Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty), awaiting = Map.empty, privateChannels = Map.empty, realScid2Alias = Map.empty, excludedChannels = Set.empty, graph, sync = Map.empty))
+    startWith(NORMAL, Data(initNodes, initChannels, Stash(Map.empty, Map.empty), rebroadcast = Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty), awaiting = Map.empty, privateChannels = Map.empty, resolveScid = Map.empty, excludedChannels = Set.empty, graph, sync = Map.empty))
   }
 
   when(NORMAL) {
@@ -316,14 +316,10 @@ object Router {
   // @formatter:off
   case class ChannelDesc private(shortChannelId: ShortChannelId, a: PublicKey, b: PublicKey)
   object ChannelDesc {
-    // TODO: not consistent with private case
     def apply(u: ChannelUpdate, ann: ChannelAnnouncement): ChannelDesc = {
       // the least significant bit tells us if it is node1 or node2
       if (u.channelFlags.isNode1) ChannelDesc(ann.shortChannelId, ann.nodeId1, ann.nodeId2) else ChannelDesc(ann.shortChannelId, ann.nodeId2, ann.nodeId1)
     }
-    /**
-     * @param shortChannelId we don't use the scid from the channel update because it may be a remote alias
-     */
     def apply(u: ChannelUpdate, pc: PrivateChannel): ChannelDesc = {
       // the least significant bit tells us if it is node1 or node2
       if (u.channelFlags.isNode1) ChannelDesc(pc.localAlias, pc.nodeId1, pc.nodeId2) else ChannelDesc(pc.localAlias, pc.nodeId2, pc.nodeId1)
@@ -647,12 +643,14 @@ object Router {
                   stash: Stash,
                   rebroadcast: Rebroadcast,
                   awaiting: Map[ChannelAnnouncement, Seq[RemoteGossip]], // note: this is a seq because we want to preserve order: first actor is the one who we need to send a tcp-ack when validation is done
-                  privateChannels: Map[ShortChannelId, PrivateChannel], // indexed by *local alias*
-                  realScid2Alias: Map[ShortChannelId, ShortChannelId],
+                  privateChannels: Map[ByteVector32, PrivateChannel], // indexed by channel id
+                  resolveScid: Map[ShortChannelId, ByteVector32], // real scid or alias to channel_id
                   excludedChannels: Set[ChannelDesc], // those channels are temporarily excluded from route calculation, because their node returned a TemporaryChannelFailure
                   graph: DirectedGraph,
                   sync: Map[PublicKey, Syncing] // keep tracks of channel range queries sent to each peer. If there is an entry in the map, it means that there is an ongoing query for which we have not yet received an 'end' message
-                 )
+                 ) {
+    def getPrivateChannel(scid: ShortChannelId): Option[PrivateChannel] = resolveScid.get(scid).flatMap(privateChannels.get)
+  }
 
   // @formatter:off
   sealed trait State

@@ -163,7 +163,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     val payload = RelayLegacyPayload(shortId1, outgoingAmount, outgoingExpiry)
     val r = createValidIncomingPacket(1100000 msat, CltvExpiry(400100), payload)
     val u = createLocalUpdate(shortId1)
-    val d = LocalChannelDown(null, channelId = channelIds(shortId1), shortId1, outgoingNodeId)
+    val d = LocalChannelDown(null, channelId = channelIds(shortId1), Some(shortId1), shortId1, outgoingNodeId)
 
     channelRelayer ! WrappedLocalChannelUpdate(u)
     channelRelayer ! WrappedLocalChannelDown(d)
@@ -472,7 +472,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     assert(channels2.last.commitments.availableBalanceForReceive === 500000.msat && channels2.last.commitments.availableBalanceForSend === 200000.msat)
 
     channelRelayer ! WrappedAvailableBalanceChanged(AvailableBalanceChanged(null, channelId_ab, Some(channelUpdate_ab.shortChannelId), channelUpdate_ab.shortChannelId, makeCommitments(channelId_ab, 100000 msat, 200000 msat)))
-    channelRelayer ! WrappedLocalChannelDown(LocalChannelDown(null, channelId_bc, channelUpdate_bc.shortChannelId, c))
+    channelRelayer ! WrappedLocalChannelDown(LocalChannelDown(null, channelId_bc, Some(channelUpdate_bc.shortChannelId), channelUpdate_bc.shortChannelId, c))
     val channels3 = getOutgoingChannels(true)
     assert(channels3.size === 1 && channels3.head.commitments.availableBalanceForSend === 100000.msat)
 

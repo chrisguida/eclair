@@ -99,10 +99,10 @@ object ChannelRelayer {
             val node2channels1 = node2channels.addOne(remoteNodeId, channelId)
             apply(nodeParams, register, channels1, scid2channels1, node2channels1)
 
-          case WrappedLocalChannelDown(LocalChannelDown(_, channelId, shortChannelId, remoteNodeId)) =>
-            context.log.debug(s"removed local channel info for channelId=$channelId shortChannelId=$shortChannelId")
+          case WrappedLocalChannelDown(LocalChannelDown(_, channelId, _, localAlias, remoteNodeId)) =>
+            context.log.debug(s"removed local channel info for channelId=$channelId localAlias=$localAlias")
             val channels1 = channels - channelId
-            val scid2Channels1 = scid2channels - shortChannelId
+            val scid2Channels1 = scid2channels - localAlias
             val node2channels1 = node2channels.subtractOne(remoteNodeId, channelId)
             apply(nodeParams, register, channels1, scid2Channels1, node2channels1)
 

@@ -68,7 +68,7 @@ case class LocalChannelUpdate(channel: ActorRef, channelId: ByteVector32, realSh
 
 case class ChannelUpdateParametersChanged(channel: ActorRef, channelId: ByteVector32, shortChannelId: ShortChannelId, remoteNodeId: PublicKey, channelUpdate: ChannelUpdate) extends ChannelEvent
 
-case class LocalChannelDown(channel: ActorRef, channelId: ByteVector32, shortChannelId: ShortChannelId, remoteNodeId: PublicKey) extends ChannelEvent
+case class LocalChannelDown(channel: ActorRef, channelId: ByteVector32, realShortChannelId_opt: Option[ShortChannelId], localAlias: ShortChannelId, remoteNodeId: PublicKey) extends ChannelEvent
 
 case class ChannelStateChanged(channel: ActorRef, channelId: ByteVector32, peer: ActorRef, remoteNodeId: PublicKey, previousState: ChannelState, currentState: ChannelState, commitments_opt: Option[AbstractCommitments]) extends ChannelEvent
 

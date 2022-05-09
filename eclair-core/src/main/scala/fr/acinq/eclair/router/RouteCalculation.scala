@@ -20,7 +20,7 @@ import akka.actor.{ActorContext, ActorRef, Status}
 import akka.event.DiagnosticLoggingAdapter
 import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Satoshi, SatoshiLong}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64}
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair._
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
@@ -70,11 +70,11 @@ object RouteCalculation {
                 case c.ann.nodeId1 => Some(ChannelDesc(shortChannelId, c.ann.nodeId1, c.ann.nodeId2))
                 case c.ann.nodeId2 => Some(ChannelDesc(shortChannelId, c.ann.nodeId2, c.ann.nodeId1))
                 case _ => None
-              }).orElse(d.privateChannels.get(d.realScid2Alias.getOrElse(shortChannelId, shortChannelId)).flatMap(c => start match {
+              }).orElse(d.getPrivateChannel(shortChannelId).flatMap(c => start match {
                 case c.nodeId1 => Some(ChannelDesc(c.localAlias, c.nodeId1, c.nodeId2))
                 case c.nodeId2 => Some(ChannelDesc(c.localAlias, c.nodeId2, c.nodeId1))
                 case _ => None
-              })).orElse(assistedChannels.get(d.realScid2Alias.getOrElse(shortChannelId, shortChannelId)).flatMap(c => start match {
+              })).orElse(assistedChannels.get(shortChannelId).flatMap(c => start match {
                 case c.nodeId => Some(ChannelDesc(shortChannelId, c.nodeId, c.nextNodeId))
                 case _ => None
               }))
@@ -143,12 +143,6 @@ object RouteCalculation {
       }
       d
     }
-  }
-
-  private def toFakeUpdate(extraHop: ExtraHop, htlcMaximum: MilliSatoshi): ChannelUpdate = {
-    // the `direction` bit in flags will not be accurate but it doesn't matter because it is not used
-    // what matters is that the `disable` bit is 0 so that this update doesn't get filtered out
-    ChannelUpdate(signature = ByteVector64.Zeroes, chainHash = ByteVector32.Zeroes, extraHop.shortChannelId, TimestampSecond.now(), channelFlags = ChannelUpdate.ChannelFlags(isNode1 = true, isEnabled = true), extraHop.cltvExpiryDelta, htlcMinimumMsat = 0 msat, extraHop.feeBase, extraHop.feeProportionalMillionths, Some(htlcMaximum))
   }
 
   def toAssistedChannels(extraRoute: Seq[ExtraHop], targetNodeId: PublicKey, amount: MilliSatoshi): Map[ShortChannelId, AssistedChannel] = {

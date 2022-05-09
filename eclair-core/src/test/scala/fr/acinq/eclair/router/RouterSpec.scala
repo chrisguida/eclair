@@ -700,10 +700,11 @@ class RouterSpec extends BaseRouterSpec {
       // Private channels should also update the graph when HTLCs are relayed through them.
       val balances = Set(33000000 msat, 5000000 msat)
       val commitments = CommitmentsSpec.makeCommitments(33000000 msat, 5000000 msat, a, g, announceChannel = false)
-      sender.send(router, AvailableBalanceChanged(sender.ref, null, None, alias_ag_private, commitments))
+      val channelId = commitments.channelId
+      sender.send(router, AvailableBalanceChanged(sender.ref, channelId, None, alias_ag_private, commitments))
       sender.send(router, Router.GetRouterData)
       val data = sender.expectMsgType[Data]
-      val channel_ag = data.privateChannels(alias_ag_private)
+      val channel_ag = data.privateChannels(channelId)
       assert(Set(channel_ag.meta.balance1, channel_ag.meta.balance2) === balances)
       // And the graph should be updated too.
       val edge_ag = data.graph.getEdge(ChannelDesc(alias_ag_private, a, g)).get

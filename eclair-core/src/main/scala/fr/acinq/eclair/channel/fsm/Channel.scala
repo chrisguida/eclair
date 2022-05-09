@@ -1636,7 +1636,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
             context.system.scheduler.scheduleOnce(3 seconds, peer, Peer.OutgoingMessage(d.channelUpdate, activeConnection))
           }
         case EmitLocalChannelDown(d) =>
-          context.system.eventStream.publish(LocalChannelDown(self, d.channelId, d.channelUpdate.shortChannelId, d.commitments.remoteParams.nodeId))
+          context.system.eventStream.publish(LocalChannelDown(self, d.channelId, d.shortChannelId_opt, d.localAlias, d.commitments.remoteParams.nodeId))
       }
 
       // When we change our channel update parameters (e.g. relay fees), we want to advertise it to other actors.

@@ -19,6 +19,7 @@ package fr.acinq.eclair.router
 import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.actor.{ActorContext, ActorRef, typed}
 import akka.event.{DiagnosticLoggingAdapter, LoggingAdapter}
+import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.Script.{pay2wsh, write}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
@@ -31,7 +32,7 @@ import fr.acinq.eclair.router.Monitoring.Metrics
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{Logs, MilliSatoshiLong, NodeParams, ShortChannelId, TxCoordinates}
+import fr.acinq.eclair.{Logs, MilliSatoshiLong, NodeParams, ShortChannelId, TxCoordinates, toLongId}
 
 object Validation {
 
@@ -119,8 +120,8 @@ object Validation {
               ctx.self ! nodeAnn
             }
             // public channels that haven't yet been announced are considered as private channels
-            val localAlias_opt = d0.realScid2Alias.get(c.shortChannelId)
-            val channelMeta_opt = localAlias_opt.flatMap(d0.privateChannels.get).map(_.meta)
+            val channelId = toLongId(tx.txid.reverse, outputIndex)
+            val channelMeta_opt = d0.privateChannels.get(channelId).map(_.meta)
             Some(PublicChannel(c, tx.txid, capacity, None, None, channelMeta_opt))
           }
         case ValidateResult(c, Right((tx, fundingTxStatus: UtxoStatus.Spent))) =>
@@ -150,7 +151,7 @@ object Validation {
           // right after the channel_announcement, channel_updates will be moved from private to public at that time
           val d1 = d0.copy(
             channels = d0.channels + (c.shortChannelId -> pc),
-            privateChannels = d0.realScid2Alias.get(c.shortChannelId).map(localAlias => d0.privateChannels - localAlias).getOrElse(d0.privateChannels) , // we remove the corresponding private channel that we may have made before
+            privateChannels = d0.privateChannels - pc.channelId, // we remove the corresponding private channel that we may have made before
             rebroadcast = d0.rebroadcast.copy(channels = d0.rebroadcast.channels + (c -> d0.awaiting.getOrElse(c, Nil).toSet)), // we also add the newly validated channels to the rebroadcast queue
             stash = stash1,
             awaiting = awaiting1)
@@ -251,18 +252,15 @@ object Validation {
 
   def handleChannelUpdate(d: Data, db: NetworkDb, routerConf: RouterConf, update: Either[LocalChannelUpdate, RemoteChannelUpdate], wasStashed: Boolean = false)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
-    val (localAlias: ShortChannelId, u: ChannelUpdate, origins: Set[GossipOrigin]) = update match {
-      case Left(lcu) => (lcu.localAlias, lcu.channelUpdate, Set(LocalGossip))
+    val (u: ChannelUpdate, origins: Set[GossipOrigin]) = update match {
+      case Left(lcu) => (lcu.channelUpdate, Set(LocalGossip))
       case Right(rcu) =>
         rcu.origins.collect {
           case RemoteGossip(peerConnection, _) if !wasStashed => // stashed changes have already been acknowledged
             log.debug("received channel update for shortChannelId={}", rcu.channelUpdate.shortChannelId)
             peerConnection ! TransportHandler.ReadAck(rcu.channelUpdate)
         }
-        // "[remote] MUST set the short_channel_id to either an alias it has received from the peer, or the real channel
-        // short_channel_id." (BOLT 7)
-        val localAlias = d.realScid2Alias.getOrElse(rcu.channelUpdate.shortChannelId, rcu.channelUpdate.shortChannelId)
-        (localAlias, rcu.channelUpdate, rcu.origins)
+        (rcu.channelUpdate, rcu.origins)
     }
     if (d.channels.contains(u.shortChannelId)) {
       // related channel is already known (note: this means no related channel_update is in the stash)
@@ -320,7 +318,7 @@ object Validation {
         val pc1 = pc.applyChannelUpdate(update)
         val graph1 = d.graph.addEdge(new GraphEdge(u, pc1))
         update.left.foreach(_ => log.info("added local shortChannelId={} public={} to the network graph", u.shortChannelId, publicChannel))
-        d.copy(channels = d.channels + (u.shortChannelId -> pc1), privateChannels = d.privateChannels - localAlias, rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> origins)), graph = graph1)
+        d.copy(channels = d.channels + (u.shortChannelId -> pc1), privateChannels = d.privateChannels - pc1.channelId, rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> origins)), graph = graph1)
       }
     } else if (d.awaiting.keys.exists(c => c.shortChannelId == u.shortChannelId)) {
       // channel is currently being validated
@@ -332,9 +330,9 @@ object Validation {
         log.debug("stashing {}", u)
         d.copy(stash = d.stash.copy(updates = d.stash.updates + (u -> origins)))
       }
-    } else if (d.privateChannels.contains(localAlias)) {
+    } else if (d.getPrivateChannel(u.shortChannelId).isDefined) {
       val publicChannel = false
-      val pc = d.privateChannels(localAlias)
+      val pc = d.getPrivateChannel(u.shortChannelId).get // always defined
       if (StaleChannels.isStale(u)) {
         log.debug("ignoring {} (stale)", u)
         sendDecision(origins, GossipDecision.Stale(u))
@@ -348,29 +346,29 @@ object Validation {
         sendDecision(origins, GossipDecision.InvalidSignature(u))
         d
       } else if (pc.getChannelUpdateSameSideAs(u).isDefined) {
-        log.debug("updated channel_update for localAlias={} public={} flags={} {}", localAlias, publicChannel, u.channelFlags, u)
+        log.debug("updated channel_update for channelId={} public={} flags={} {}", pc.channelId, publicChannel, u.channelFlags, u)
         Metrics.channelUpdateRefreshed(u, pc.getChannelUpdateSameSideAs(u).get, publicChannel)
         sendDecision(origins, GossipDecision.Accepted(u))
         ctx.system.eventStream.publish(ChannelUpdatesReceived(u :: Nil))
         // we also need to update the graph
         val pc1 = pc.applyChannelUpdate(update)
         val graph1 = if (u.channelFlags.isEnabled) {
-          update.left.foreach(_ => log.info("added local localAlias={} public={} to the network graph", localAlias, publicChannel))
+          update.left.foreach(_ => log.info("added local channelId={} public={} to the network graph", pc.channelId, publicChannel))
           d.graph.addEdge(new GraphEdge(u, pc1))
         } else {
-          update.left.foreach(_ => log.info("removed local localAlias={} public={} from the network graph", localAlias, publicChannel))
+          update.left.foreach(_ => log.info("removed local channelId={} public={} from the network graph", pc.channelId, publicChannel))
           d.graph.removeEdge(ChannelDesc(u, pc1))
         }
-        d.copy(privateChannels = d.privateChannels + (localAlias -> pc1), graph = graph1)
+        d.copy(privateChannels = d.privateChannels + (pc.channelId -> pc1), graph = graph1)
       } else {
-        log.debug("added channel_update for localAlias={} public={} flags={} {}", localAlias, publicChannel, u.channelFlags, u)
+        log.debug("added channel_update for channelId={} public={} flags={} {}", pc.channelId, publicChannel, u.channelFlags, u)
         sendDecision(origins, GossipDecision.Accepted(u))
         ctx.system.eventStream.publish(ChannelUpdatesReceived(u :: Nil))
         // we also need to update the graph
         val pc1 = pc.applyChannelUpdate(update)
         val graph1 = d.graph.addEdge(new GraphEdge(u, pc1))
-        update.left.foreach(_ => log.info("added local localAlias={} public={} to the network graph", localAlias, publicChannel))
-        d.copy(privateChannels = d.privateChannels + (localAlias -> pc1), graph = graph1)
+        update.left.foreach(_ => log.info("added local channelId={} public={} to the network graph", pc.channelId, publicChannel))
+        d.copy(privateChannels = d.privateChannels + (pc.channelId -> pc1), graph = graph1)
       }
     } else if (db.isPruned(u.shortChannelId) && !StaleChannels.isStale(u)) {
       // the channel was recently pruned, but if we are here, it means that the update is not stale so this is the case
@@ -416,10 +414,11 @@ object Validation {
         // channel has already been announced and router knows about it, we can process the channel_update
         handleChannelUpdate(d, db, routerConf, Left(lcu))
       case None =>
-        val d1 = lcu.realShortChannelId_opt match {
-          case Some(scid) => d.copy(realScid2Alias = d.realScid2Alias + (scid -> lcu.localAlias))
-          case None => d
+        val mappings = lcu.realShortChannelId_opt match {
+          case Some(realScid) => Map(realScid -> lcu.channelId, lcu.localAlias -> lcu.channelId)
+          case None => Map(lcu.localAlias -> lcu.channelId)
         }
+        val d1 = d.copy(resolveScid = d.resolveScid ++ mappings)
         lcu.channelAnnouncement_opt match {
           case Some(c) if d1.awaiting.contains(c) =>
             // channel is currently being verified, we can process the channel_update right away (it will be stashed)
@@ -431,7 +430,7 @@ object Validation {
             // maybe the local channel was pruned (can happen if we were disconnected for more than 2 weeks)
             db.removeFromPruned(c.shortChannelId)
             handleChannelUpdate(d2, db, routerConf, Left(lcu))
-          case None if d1.privateChannels.contains(lcu.localAlias) =>
+          case None if d1.privateChannels.contains(lcu.channelId) =>
             // channel isn't announced but we already know about it, we can process the channel_update
             handleChannelUpdate(d1, db, routerConf, Left(lcu))
           case None =>
@@ -439,30 +438,31 @@ object Validation {
             // let's create a corresponding private channel and process the channel_update
             log.debug("adding unannounced local channel to remote={} localAlias={}", lcu.remoteNodeId, lcu.localAlias)
             val pc = PrivateChannel(lcu.localAlias, lcu.channelId, localNodeId, lcu.remoteNodeId, None, None, ChannelMeta(0 msat, 0 msat)).updateBalances(lcu.commitments)
-            val d2 = d1.copy(privateChannels = d1.privateChannels + (lcu.localAlias -> pc))
+            val d2 = d1.copy(privateChannels = d1.privateChannels + (lcu.channelId -> pc))
             handleChannelUpdate(d2, db, routerConf, Left(lcu))
         }
     }
   }
 
   def handleLocalChannelDown(d: Data, localNodeId: PublicKey, lcd: LocalChannelDown)(implicit log: LoggingAdapter): Data = {
-    import lcd.{channelId, remoteNodeId, shortChannelId}
+    import lcd.{channelId, remoteNodeId}
     // a local channel has permanently gone down
-    if (d.channels.contains(shortChannelId)) {
+    if (lcd.realShortChannelId_opt.exists(d.channels.contains)) {
       // the channel was public, we will receive (or have already received) a WatchEventSpentBasic event, that will trigger a clean up of the channel
       // so let's not do anything here
       d
-    } else if (d.privateChannels.contains(shortChannelId)) {
+    } else if (d.privateChannels.contains(lcd.channelId)) {
       // the channel was private or public-but-not-yet-announced, let's do the clean up
-      log.info("removing private local channel and channel_update for channelId={} shortChannelId={}", channelId, shortChannelId)
-      val desc1 = ChannelDesc(shortChannelId, localNodeId, remoteNodeId)
-      val desc2 = ChannelDesc(shortChannelId, remoteNodeId, localNodeId)
+      val localAlias = d.privateChannels(channelId).localAlias
+      log.info("removing private local channel and channel_update for channelId={} localAlias={}", channelId, localAlias)
+      val desc1 = ChannelDesc(localAlias, localNodeId, remoteNodeId)
+      val desc2 = ChannelDesc(localAlias, remoteNodeId, localNodeId)
       // we remove the corresponding updates from the graph
       val graph1 = d.graph
         .removeEdge(desc1)
         .removeEdge(desc2)
       // and we remove the channel and channel_update from our state
-      d.copy(privateChannels = d.privateChannels - shortChannelId, graph = graph1)
+      d.copy(privateChannels = d.privateChannels - channelId, graph = graph1)
     } else {
       d
     }
@@ -479,13 +479,13 @@ object Validation {
       case None =>
         (d.channels, d.graph)
     }
-    val (privateChannels1, graph2) = d.privateChannels.get(e.localAlias) match {
+    val (privateChannels1, graph2) = d.privateChannels.get(e.channelId) match {
       case Some(pc) =>
         val pc1 = pc.updateBalances(e.commitments)
         log.debug("private channel balance updated: {}", pc1)
         val update_opt = if (e.commitments.localNodeId == pc1.nodeId1) pc1.update_1_opt else pc1.update_2_opt
         val graph2 = update_opt.map(u => graph1.addEdge(new GraphEdge(u, pc1))).getOrElse(graph1)
-        (d.privateChannels + (e.localAlias -> pc1), graph2)
+        (d.privateChannels + (e.channelId -> pc1), graph2)
       case None =>
         (d.privateChannels, graph1)
     }
