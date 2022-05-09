@@ -766,7 +766,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
       (RemoteFailure(defaultAmountMsat, route_abcd, Sphinx.DecryptedFailurePacket(b, FeeInsufficient(100 msat, update_bc))), Set.empty, Set.empty),
       // unreadable remote failures -> blacklist all nodes except our direct peer and the final recipient
       (UnreadableRemoteFailure(defaultAmountMsat, ChannelHop.fromChannelUpdate(a, b, update_ab) :: Nil), Set.empty, Set.empty),
-      (UnreadableRemoteFailure(defaultAmountMsat, ChannelHop.fromChannelUpdate(a, b, update_ab) :: ChannelHop.fromChannelUpdate(b, c, update_bc) :: ChannelHop.fromChannelUpdate(c, d, update_cd) :: ChannelHop.fromChannelUpdate(d, e, null) :: Nil), Set(c, d), Set.empty)
+      (UnreadableRemoteFailure(defaultAmountMsat, ChannelHop.fromChannelUpdate(a, b, update_ab) :: ChannelHop.fromChannelUpdate(b, c, update_bc) :: ChannelHop.fromChannelUpdate(c, d, update_cd) :: ChannelHop(ShortChannelId(5656986L), d, e, null) :: Nil), Set(c, d), Set.empty)
     )
 
     for ((failure, expectedNodes, expectedChannels) <- testCases) {

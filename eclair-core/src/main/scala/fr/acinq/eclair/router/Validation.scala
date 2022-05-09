@@ -150,7 +150,7 @@ object Validation {
           // right after the channel_announcement, channel_updates will be moved from private to public at that time
           val d1 = d0.copy(
             channels = d0.channels + (c.shortChannelId -> pc),
-            privateChannels = d0.privateChannels - c.shortChannelId, // we remove fake announcements that we may have made before
+            privateChannels = d0.realScid2Alias.get(c.shortChannelId).map(localAlias => d0.privateChannels - localAlias).getOrElse(d0.privateChannels) , // we remove the corresponding private channel that we may have made before
             rebroadcast = d0.rebroadcast.copy(channels = d0.rebroadcast.channels + (c -> d0.awaiting.getOrElse(c, Nil).toSet)), // we also add the newly validated channels to the rebroadcast queue
             stash = stash1,
             awaiting = awaiting1)
