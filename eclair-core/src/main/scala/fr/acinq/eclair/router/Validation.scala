@@ -19,7 +19,6 @@ package fr.acinq.eclair.router
 import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.actor.{ActorContext, ActorRef, typed}
 import akka.event.{DiagnosticLoggingAdapter, LoggingAdapter}
-import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.Script.{pay2wsh, write}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
@@ -252,20 +251,20 @@ object Validation {
 
   def handleChannelUpdate(d: Data, db: NetworkDb, routerConf: RouterConf, update: Either[LocalChannelUpdate, RemoteChannelUpdate], wasStashed: Boolean = false)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
-    val (u: ChannelUpdate, origins: Set[GossipOrigin]) = update match {
-      case Left(lcu) => (lcu.channelUpdate, Set(LocalGossip))
+    val (publicChannel_opt: Option[PublicChannel], privateChannel_opt: Option[PrivateChannel], u: ChannelUpdate, origins: Set[GossipOrigin]) = update match {
+      case Left(lcu) => (lcu.realShortChannelId_opt.flatMap(d.channels.get), d.privateChannels.get(lcu.channelId), lcu.channelUpdate, Set(LocalGossip))
       case Right(rcu) =>
         rcu.origins.collect {
           case RemoteGossip(peerConnection, _) if !wasStashed => // stashed changes have already been acknowledged
             log.debug("received channel update for shortChannelId={}", rcu.channelUpdate.shortChannelId)
             peerConnection ! TransportHandler.ReadAck(rcu.channelUpdate)
         }
-        (rcu.channelUpdate, rcu.origins)
+        (d.channels.get(rcu.channelUpdate.shortChannelId), d.getPrivateChannel(rcu.channelUpdate.shortChannelId), rcu.channelUpdate, rcu.origins)
     }
-    if (d.channels.contains(u.shortChannelId)) {
+    if (publicChannel_opt.isDefined) {
       // related channel is already known (note: this means no related channel_update is in the stash)
       val publicChannel = true
-      val pc = d.channels(u.shortChannelId)
+      val pc = publicChannel_opt.get
       if (d.rebroadcast.updates.contains(u)) {
         log.debug("ignoring {} (pending rebroadcast)", u)
         sendDecision(origins, GossipDecision.Accepted(u))
@@ -273,7 +272,7 @@ object Validation {
         // NB: we update the channels because the balances may have changed even if the channel_update is the same.
         val pc1 = pc.applyChannelUpdate(update)
         val graph1 = d.graph.addEdge(new GraphEdge(u, pc1))
-        d.copy(rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> origins1)), channels = d.channels + (u.shortChannelId -> pc1), graph = graph1)
+        d.copy(rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> origins1)), channels = d.channels + (pc.shortChannelId -> pc1), graph = graph1)
       } else if (StaleChannels.isStale(u)) {
         log.debug("ignoring {} (stale)", u)
         sendDecision(origins, GossipDecision.Stale(u))
@@ -286,7 +285,7 @@ object Validation {
             // NB: we update the graph because the balances may have changed even if the channel_update is the same.
             val pc1 = pc.applyChannelUpdate(update)
             val graph1 = d.graph.addEdge(new GraphEdge(u, pc1))
-            d.copy(channels = d.channels + (u.shortChannelId -> pc1), graph = graph1)
+            d.copy(channels = d.channels + (pc.shortChannelId -> pc1), graph = graph1)
           case Right(_) => d
         }
       } else if (!Announcements.checkSig(u, pc.getNodeIdSameSideAs(u))) {
@@ -308,7 +307,7 @@ object Validation {
           update.left.foreach(_ => log.info("removed local shortChannelId={} public={} from the network graph", u.shortChannelId, publicChannel))
           d.graph.removeEdge(ChannelDesc(u, pc1.ann))
         }
-        d.copy(channels = d.channels + (u.shortChannelId -> pc1), rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> origins)), graph = graph1)
+        d.copy(channels = d.channels + (pc.shortChannelId -> pc1), rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> origins)), graph = graph1)
       } else {
         log.debug("added channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.channelFlags, u)
         sendDecision(origins, GossipDecision.Accepted(u))
@@ -318,7 +317,7 @@ object Validation {
         val pc1 = pc.applyChannelUpdate(update)
         val graph1 = d.graph.addEdge(new GraphEdge(u, pc1))
         update.left.foreach(_ => log.info("added local shortChannelId={} public={} to the network graph", u.shortChannelId, publicChannel))
-        d.copy(channels = d.channels + (u.shortChannelId -> pc1), privateChannels = d.privateChannels - pc1.channelId, rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> origins)), graph = graph1)
+        d.copy(channels = d.channels + (pc.shortChannelId -> pc1), privateChannels = d.privateChannels - pc1.channelId, rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> origins)), graph = graph1)
       }
     } else if (d.awaiting.keys.exists(c => c.shortChannelId == u.shortChannelId)) {
       // channel is currently being validated
@@ -330,9 +329,9 @@ object Validation {
         log.debug("stashing {}", u)
         d.copy(stash = d.stash.copy(updates = d.stash.updates + (u -> origins)))
       }
-    } else if (d.getPrivateChannel(u.shortChannelId).isDefined) {
+    } else if (privateChannel_opt.isDefined) {
       val publicChannel = false
-      val pc = d.getPrivateChannel(u.shortChannelId).get // always defined
+      val pc = privateChannel_opt.get
       if (StaleChannels.isStale(u)) {
         log.debug("ignoring {} (stale)", u)
         sendDecision(origins, GossipDecision.Stale(u))
@@ -475,7 +474,7 @@ object Validation {
         log.debug("public channel balance updated: {}", pc1)
         val update_opt = if (e.commitments.localNodeId == pc1.ann.nodeId1) pc1.update_1_opt else pc1.update_2_opt
         val graph1 = update_opt.map(u => d.graph.addEdge(new GraphEdge(u, pc1))).getOrElse(d.graph)
-        (d.channels + (e.localAlias -> pc1), graph1)
+        (d.channels + (pc.shortChannelId -> pc1), graph1)
       case None =>
         (d.channels, d.graph)
     }

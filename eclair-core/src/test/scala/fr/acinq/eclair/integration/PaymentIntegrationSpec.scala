@@ -639,14 +639,6 @@ class PaymentIntegrationSpec extends IntegrationSpec {
 
   test("generate and validate lots of channels") {
 
-    awaitCond({
-      nodes("D").router ! Router.PrintChannelUpdates
-      val sender = TestProbe()
-      sender.send(nodes("D").router, Router.GetChannels)
-      val anns = sender.expectMsgType[Iterable[ChannelAnnouncement]]
-      anns.size == 10
-    }, max = 60 seconds, interval = 1 second)
-
     val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
     // we simulate fake channels by publishing a funding tx and sending announcement messages to a node at random
     logger.info(s"generating fake channels")
@@ -674,9 +666,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     }
     awaitCond({
       sender.send(nodes("D").router, Router.GetChannels)
-      val anns = sender.expectMsgType[Iterable[ChannelAnnouncement]]
-      println(s"anns=${anns.size}")
-      anns.size == channels.size + 8 // 8 original channels (A -> B is private)
+      sender.expectMsgType[Iterable[ChannelAnnouncement]].size == channels.size + 8 // 8 original channels (A -> B is private)
     }, max = 120 seconds, interval = 1 second)
   }
 
