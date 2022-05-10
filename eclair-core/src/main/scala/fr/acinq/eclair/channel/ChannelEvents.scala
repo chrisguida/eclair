@@ -45,6 +45,8 @@ case class ChannelRestored(channel: ActorRef, channelId: ByteVector32, peer: Act
 
 case class ChannelIdAssigned(channel: ActorRef, remoteNodeId: PublicKey, temporaryChannelId: ByteVector32, channelId: ByteVector32) extends ChannelEvent
 
+case class AliasAssigned(channel: ActorRef, channelId: ByteVector32, realShortChannelId_opt: Option[RealShortChannelId], localAlias: ShortChannelId, remoteNodeId: PublicKey, commitments: AbstractCommitments) extends ChannelEvent
+
 /**
  * @param shortChannelId_opt  the real scid, it can change in case of a reorg before the channel reaches 6 conf
  * @param localAlias          we must remember the alias that we sent to our peer because we use it to:

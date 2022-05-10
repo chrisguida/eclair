@@ -1631,10 +1631,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
         case EmitLocalChannelUpdate(reason, d, sendToPeer) =>
           log.info(s"emitting channel update: reason={} enabled={} sendToPeer={} realScid=${d.realShortChannelId_opt} channel_update={}", reason, d.channelUpdate.channelFlags.isEnabled, sendToPeer, d.channelUpdate)
           context.system.eventStream.publish(LocalChannelUpdate(self, d.channelId, realShortChannelId_opt = d.realShortChannelId_opt, localAlias = d.localAlias, d.commitments.remoteParams.nodeId, d.channelAnnouncement, d.channelUpdate, d.commitments))
-          if (sendToPeer) {
-            // TODO: delay due to race conditions in tests
-            context.system.scheduler.scheduleOnce(3 seconds, peer, Peer.OutgoingMessage(d.channelUpdate, activeConnection))
-          }
+          context.system.scheduler.scheduleOnce(3 seconds, peer, Peer.OutgoingMessage(d.channelUpdate, activeConnection))
         case EmitLocalChannelDown(d) =>
           context.system.eventStream.publish(LocalChannelDown(self, d.channelId, d.realShortChannelId_opt, d.localAlias, d.commitments.remoteParams.nodeId))
       }

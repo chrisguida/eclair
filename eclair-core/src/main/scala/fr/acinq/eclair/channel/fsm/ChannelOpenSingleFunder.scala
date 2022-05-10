@@ -377,6 +377,7 @@ trait ChannelOpenSingleFunder extends FundingHandlers with ErrorHandlers {
             nextPerCommitmentPoint = nextPerCommitmentPoint,
             tlvStream = TlvStream(ChannelReadyTlv.ShortChannelIdTlv(localAlias))
           )
+          context.system.eventStream.publish(AliasAssigned(self, channelId = commitments.channelId, realShortChannelId_opt, localAlias, remoteNodeId, commitments))
           goto(WAIT_FOR_CHANNEL_READY) using DATA_WAIT_FOR_CHANNEL_READY(commitments, realShortChannelId_opt = realShortChannelId_opt, localAlias = localAlias, channelReady) storing() sending channelReady
         case Failure(t) =>
           log.error(t, s"rejecting channel with invalid funding tx: ${fundingTx.bin}")

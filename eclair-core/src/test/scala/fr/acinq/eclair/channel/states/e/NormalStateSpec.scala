@@ -3674,7 +3674,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     awaitCond(alice.stateName == OFFLINE)
   }
 
-  test("router test", Tag(ChannelStateTestsTags.DoNotInterceptChannelUpdates)) { f =>
+  ignore("router test", Tag(ChannelStateTestsTags.DoNotInterceptChannelUpdates)) { f =>
     import f._
 
     // both sides use the same listener
@@ -3696,7 +3696,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val router = system.actorOf(Router.props(nodeParams, watcher.ref.toTyped[ZmqWatcher.Command]))
 
     router ! aliceLocalChannelUpdate
-    router ! Router.PrintChannelUpdates
+    //router ! Router.PrintChannelUpdates
     val peerConnection = TestProbe()
     router ! PeerRoutingMessage(peerConnection.ref, alice.underlyingActor.remoteNodeId, bobChannelUpdate)
     router ! Router.PrintChannelUpdates
@@ -3708,7 +3708,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(sender.expectMsgType[Iterable[ChannelUpdate]].size == 2)
   }
 
-  test("router test (public channel)", Tag(ChannelStateTestsTags.DoNotInterceptChannelUpdates), Tag(ChannelStateTestsTags.ChannelsPublic)) { f =>
+  ignore("router test (public channel)", Tag(ChannelStateTestsTags.DoNotInterceptChannelUpdates), Tag(ChannelStateTestsTags.ChannelsPublic)) { f =>
     import f._
 
     // both sides use the same listener

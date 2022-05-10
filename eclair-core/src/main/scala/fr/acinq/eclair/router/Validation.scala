@@ -25,7 +25,7 @@ import fr.acinq.bitcoin.scalacompat.Script.{pay2wsh, write}
 import fr.acinq.eclair.RealShortChannelId
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{UtxoStatus, ValidateRequest, ValidateResult, WatchExternalChannelSpent}
-import fr.acinq.eclair.channel.{AvailableBalanceChanged, LocalChannelDown, LocalChannelUpdate}
+import fr.acinq.eclair.channel.{AliasAssigned, AvailableBalanceChanged, LocalChannelDown, LocalChannelUpdate}
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.db.NetworkDb
 import fr.acinq.eclair.router.Graph.GraphStructure.GraphEdge
@@ -419,6 +419,32 @@ object Validation {
     }
   }
 
+  def handleAliasAssigned(d: Data, localNodeId: PublicKey, aa: AliasAssigned)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
+    implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
+    val mappings = aa.realShortChannelId_opt match {
+      case Some(realScid) => Map(realScid -> aa.channelId, aa.localAlias -> aa.channelId)
+      case None => Map(aa.localAlias -> aa.channelId)
+    }
+    val d1 = d.copy(resolveScid = d.resolveScid ++ mappings)
+    aa.realShortChannelId_opt.flatMap(d.channels.get) match {
+      case Some(_) =>
+        // channel is known, nothing more to do
+        d1
+      case None =>
+        d.privateChannels.get(aa.channelId) match {
+          case Some(_) =>
+            // channel is known, nothing more to do
+            d1
+          case None =>
+            // channel isn't announced and we never heard of it (maybe it is a private channel or maybe it is a public channel that doesn't yet have 6 confirmations)
+            // let's create a corresponding private channel and process the channel_update
+            val pc = PrivateChannel(aa.localAlias, aa.channelId, localNodeId, aa.remoteNodeId, None, None, ChannelMeta(0 msat, 0 msat)).updateBalances(aa.commitments)
+            log.debug("adding unannounced local channel to remote={} localAlias={}", aa.remoteNodeId, aa.localAlias)
+            d1.copy(privateChannels = d1.privateChannels + (aa.channelId -> pc))
+        }
+    }
+  }
+
   def handleLocalChannelUpdate(d: Data, db: NetworkDb, routerConf: RouterConf, localNodeId: PublicKey, watcher: typed.ActorRef[ZmqWatcher.Command], lcu: LocalChannelUpdate)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
     lcu.realShortChannelId_opt.flatMap(d.channels.get) match {
@@ -426,32 +452,23 @@ object Validation {
         // channel has already been announced and router knows about it, we can process the channel_update
         handleChannelUpdate(d, db, routerConf, Left(lcu))
       case None =>
-        val mappings = lcu.realShortChannelId_opt match {
-          case Some(realScid) => Map(realScid -> lcu.channelId, lcu.localAlias -> lcu.channelId)
-          case None => Map(lcu.localAlias -> lcu.channelId)
-        }
-        val d1 = d.copy(resolveScid = d.resolveScid ++ mappings)
         lcu.channelAnnouncement_opt match {
-          case Some(c) if d1.awaiting.contains(c) =>
+          case Some(c) if d.awaiting.contains(c) =>
             // channel is currently being verified, we can process the channel_update right away (it will be stashed)
-            handleChannelUpdate(d1, db, routerConf, Left(lcu))
+            handleChannelUpdate(d, db, routerConf, Left(lcu))
           case Some(c) =>
             // channel wasn't announced but here is the announcement, we will process it *before* the channel_update
             watcher ! ValidateRequest(ctx.self, c)
-            val d2 = d1.copy(awaiting = d1.awaiting + (c -> Nil)) // no origin
+            val d1 = d.copy(awaiting = d.awaiting + (c -> Nil)) // no origin
             // maybe the local channel was pruned (can happen if we were disconnected for more than 2 weeks)
             db.removeFromPruned(c.shortChannelId)
-            handleChannelUpdate(d2, db, routerConf, Left(lcu))
-          case None if d1.privateChannels.contains(lcu.channelId) =>
-            // channel isn't announced but we already know about it, we can process the channel_update
             handleChannelUpdate(d1, db, routerConf, Left(lcu))
+          case None if d.privateChannels.contains(lcu.channelId) =>
+            // channel isn't announced but we already know about it, we can process the channel_update
+            handleChannelUpdate(d, db, routerConf, Left(lcu))
           case None =>
-            // channel isn't announced and we never heard of it (maybe it is a private channel or maybe it is a public channel that doesn't yet have 6 confirmations)
-            // let's create a corresponding private channel and process the channel_update
-            log.debug("adding unannounced local channel to remote={} localAlias={}", lcu.remoteNodeId, lcu.localAlias)
-            val pc = PrivateChannel(lcu.localAlias, lcu.channelId, localNodeId, lcu.remoteNodeId, None, None, ChannelMeta(0 msat, 0 msat)).updateBalances(lcu.commitments)
-            val d2 = d1.copy(privateChannels = d1.privateChannels + (lcu.channelId -> pc))
-            handleChannelUpdate(d2, db, routerConf, Left(lcu))
+            log.warning("unknown local channel update to remote={} channelId={}, localAlias={}", lcu.remoteNodeId, lcu.channelId, lcu.localAlias)
+            d
         }
     }
   }
