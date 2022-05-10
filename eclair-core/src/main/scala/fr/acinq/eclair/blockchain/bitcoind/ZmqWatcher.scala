@@ -20,6 +20,7 @@ import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors, TimerScheduler}
 import akka.actor.typed.{ActorRef, Behavior, SupervisorStrategy}
 import fr.acinq.bitcoin.scalacompat._
+import fr.acinq.eclair.RealShortChannelId
 import fr.acinq.eclair.blockchain.Monitoring.Metrics
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
@@ -136,8 +137,8 @@ object ZmqWatcher {
   /** This event is sent when a [[WatchSpentBasic]] condition is met. */
   sealed trait WatchSpentBasicTriggered extends WatchTriggered
 
-  case class WatchExternalChannelSpent(replyTo: ActorRef[WatchExternalChannelSpentTriggered], txId: ByteVector32, outputIndex: Int, shortChannelId: ShortChannelId) extends WatchSpentBasic[WatchExternalChannelSpentTriggered]
-  case class WatchExternalChannelSpentTriggered(shortChannelId: ShortChannelId) extends WatchSpentBasicTriggered
+  case class WatchExternalChannelSpent(replyTo: ActorRef[WatchExternalChannelSpentTriggered], txId: ByteVector32, outputIndex: Int, shortChannelId: RealShortChannelId) extends WatchSpentBasic[WatchExternalChannelSpentTriggered]
+  case class WatchExternalChannelSpentTriggered(shortChannelId: RealShortChannelId) extends WatchSpentBasicTriggered
 
   case class WatchFundingSpent(replyTo: ActorRef[WatchFundingSpentTriggered], txId: ByteVector32, outputIndex: Int, hints: Set[ByteVector32]) extends WatchSpent[WatchFundingSpentTriggered]
   case class WatchFundingSpentTriggered(spendingTx: Transaction) extends WatchSpentTriggered

@@ -328,7 +328,7 @@ object ChannelCodecsSpec {
       commitInput = commitmentInput,
       remotePerCommitmentSecrets = ShaChain.init)
 
-    DATA_NORMAL(commitments, Some(ShortChannelId(42)), buried = true, None, channelUpdate, ShortChannelId.generateLocalAlias(), None, None, None, None)
+    DATA_NORMAL(commitments, Some(realScid(42)), buried = true, None, channelUpdate, ShortChannelId.generateLocalAlias(), None, None, None, None)
   }
 
 }

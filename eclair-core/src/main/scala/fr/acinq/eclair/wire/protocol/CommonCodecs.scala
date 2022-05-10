@@ -18,6 +18,7 @@ package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Satoshi, Transaction}
+import fr.acinq.eclair.RealShortChannelId
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.ChannelFlags
 import fr.acinq.eclair.crypto.Mac32
@@ -139,6 +140,8 @@ object CommonCodecs {
   val listofnodeaddresses: Codec[List[NodeAddress]] = variableSizeBytes(uint16, list(nodeaddress))
 
   val shortchannelid: Codec[ShortChannelId] = int64.xmap(l => ShortChannelId(l), s => s.toLong)
+
+  val realshortchannelid: Codec[RealShortChannelId] = shortchannelid.narrow[RealShortChannelId](scid => Attempt.successful(ShortChannelId.toReal(scid)), scid => scid)
 
   val privateKey: Codec[PrivateKey] = Codec[PrivateKey](
     (priv: PrivateKey) => bytes(32).encode(priv.value),

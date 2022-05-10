@@ -22,6 +22,7 @@ import akka.testkit.TestProbe
 import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
 import fr.acinq.bitcoin.scalacompat.Script.{pay2wsh, write}
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, SatoshiLong, Transaction, TxOut}
+import fr.acinq.eclair.RealShortChannelId
 import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{UtxoStatus, ValidateRequest, ValidateResult, WatchExternalChannelSpent}
 import fr.acinq.eclair.channel.{CommitmentsSpec, LocalChannelUpdate}
@@ -73,12 +74,12 @@ abstract class BaseRouterSpec extends TestKitBaseClass with FixtureAnyFunSuiteLi
   val node_g = makeNodeAnnouncement(priv_g, "node-G", Color(30, 10, -50), Nil, Features.empty)
   val node_h = makeNodeAnnouncement(priv_h, "node-H", Color(30, 10, -50), Nil, Features.empty)
 
-  val scid_ab = ShortChannelId(BlockHeight(420000), 1, 0)
-  val scid_bc = ShortChannelId(BlockHeight(420000), 2, 0)
-  val scid_cd = ShortChannelId(BlockHeight(420000), 3, 0)
-  val scid_ef = ShortChannelId(BlockHeight(420000), 4, 0)
-  val scid_ag_private = ShortChannelId(BlockHeight(420000), 5, 0)
-  val scid_gh = ShortChannelId(BlockHeight(420000), 6, 0)
+  val scid_ab = ShortChannelId(BlockHeight(420000), 1, 0).toReal
+  val scid_bc = ShortChannelId(BlockHeight(420000), 2, 0).toReal
+  val scid_cd = ShortChannelId(BlockHeight(420000), 3, 0).toReal
+  val scid_ef = ShortChannelId(BlockHeight(420000), 4, 0).toReal
+  val scid_ag_private = ShortChannelId(BlockHeight(420000), 5, 0).toReal
+  val scid_gh = ShortChannelId(BlockHeight(420000), 6, 0).toReal
 
   val channelId_ag_private = randomBytes32()
 
@@ -218,12 +219,12 @@ abstract class BaseRouterSpec extends TestKitBaseClass with FixtureAnyFunSuiteLi
 }
 
 object BaseRouterSpec {
-  def channelAnnouncement(channelId: ShortChannelId, node1_priv: PrivateKey, node2_priv: PrivateKey, funding1_priv: PrivateKey, funding2_priv: PrivateKey) = {
-    val witness = Announcements.generateChannelAnnouncementWitness(Block.RegtestGenesisBlock.hash, channelId, node1_priv.publicKey, node2_priv.publicKey, funding1_priv.publicKey, funding2_priv.publicKey, Features.empty)
+  def channelAnnouncement(shortChannelId: RealShortChannelId, node1_priv: PrivateKey, node2_priv: PrivateKey, funding1_priv: PrivateKey, funding2_priv: PrivateKey) = {
+    val witness = Announcements.generateChannelAnnouncementWitness(Block.RegtestGenesisBlock.hash, shortChannelId, node1_priv.publicKey, node2_priv.publicKey, funding1_priv.publicKey, funding2_priv.publicKey, Features.empty)
     val node1_sig = Announcements.signChannelAnnouncement(witness, node1_priv)
     val funding1_sig = Announcements.signChannelAnnouncement(witness, funding1_priv)
     val node2_sig = Announcements.signChannelAnnouncement(witness, node2_priv)
     val funding2_sig = Announcements.signChannelAnnouncement(witness, funding2_priv)
-    makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, channelId, node1_priv.publicKey, node2_priv.publicKey, funding1_priv.publicKey, funding2_priv.publicKey, node1_sig, node2_sig, funding1_sig, funding2_sig)
+    makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, shortChannelId, node1_priv.publicKey, node2_priv.publicKey, funding1_priv.publicKey, funding2_priv.publicKey, node1_sig, node2_sig, funding1_sig, funding2_sig)
   }
 }

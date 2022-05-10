@@ -22,6 +22,7 @@ import akka.testkit.{TestKit, TestProbe}
 import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
 import fr.acinq.bitcoin.scalacompat.Script.{pay2wsh, write}
 import fr.acinq.bitcoin.scalacompat.{Block, SatoshiLong, Transaction, TxOut}
+import fr.acinq.eclair.RealShortChannelId
 import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{UtxoStatus, ValidateRequest, ValidateResult}
@@ -332,7 +333,7 @@ object FrontRouterSpec {
   val channelId_cd = ShortChannelId(BlockHeight(420000), 3, 0)
   val channelId_ef = ShortChannelId(BlockHeight(420000), 4, 0)
 
-  def channelAnnouncement(shortChannelId: ShortChannelId, node1_priv: PrivateKey, node2_priv: PrivateKey, funding1_priv: PrivateKey, funding2_priv: PrivateKey) = {
+  def channelAnnouncement(shortChannelId: RealShortChannelId, node1_priv: PrivateKey, node2_priv: PrivateKey, funding1_priv: PrivateKey, funding2_priv: PrivateKey) = {
     val witness = Announcements.generateChannelAnnouncementWitness(Block.RegtestGenesisBlock.hash, shortChannelId, node1_priv.publicKey, node2_priv.publicKey, funding1_priv.publicKey, funding2_priv.publicKey, Features.empty)
     val node1_sig = Announcements.signChannelAnnouncement(witness, node1_priv)
     val funding1_sig = Announcements.signChannelAnnouncement(witness, funding1_priv)

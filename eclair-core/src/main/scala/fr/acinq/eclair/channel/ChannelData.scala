@@ -19,6 +19,7 @@ package fr.acinq.eclair.channel
 import akka.actor.{ActorRef, PossiblyHarmful}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, DeterministicWallet, OutPoint, Satoshi, Transaction}
+import fr.acinq.eclair.RealShortChannelId
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.transactions.CommitmentSpec
@@ -427,11 +428,11 @@ final case class DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments: Commitments,
                                                  deferred: Option[ChannelReady],
                                                  lastSent: Either[FundingCreated, FundingSigned]) extends PersistentChannelData
 final case class DATA_WAIT_FOR_CHANNEL_READY(commitments: Commitments,
-                                             shortChannelId_opt: Option[ShortChannelId],
+                                             realShortChannelId_opt: Option[RealShortChannelId],
                                              localAlias: ShortChannelId,
                                              lastSent: ChannelReady) extends PersistentChannelData
 final case class DATA_NORMAL(commitments: Commitments,
-                             shortChannelId_opt: Option[ShortChannelId],
+                             realShortChannelId_opt: Option[RealShortChannelId],
                              buried: Boolean,
                              channelAnnouncement: Option[ChannelAnnouncement],
                              channelUpdate: ChannelUpdate,

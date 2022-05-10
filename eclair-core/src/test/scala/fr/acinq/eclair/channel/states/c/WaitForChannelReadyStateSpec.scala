@@ -88,7 +88,7 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
   test("recv ChannelReady") { f =>
     import f._
     // we have a real scid at this stage, because this isn't a zero-conf channel
-    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_CHANNEL_READY].shortChannelId_opt.nonEmpty)
+    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_CHANNEL_READY].realShortChannelId_opt.nonEmpty)
     val channelReady = bob2alice.expectMsgType[ChannelReady]
     bob2alice.forward(alice)
     val initialChannelUpdate = alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate
@@ -103,7 +103,7 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
   test("recv ChannelReady (no alias)") { f =>
     import f._
     // we have a real scid at this stage, because this isn't a zero-conf channel
-    val realScid = alice.stateData.asInstanceOf[DATA_WAIT_FOR_CHANNEL_READY].shortChannelId_opt.get
+    val realScid = alice.stateData.asInstanceOf[DATA_WAIT_FOR_CHANNEL_READY].realShortChannelId_opt.get
     val channelReady = bob2alice.expectMsgType[ChannelReady]
     val channelReadyNoAlias = channelReady.modify(_.tlvStream.records).using(_.filterNot(_.isInstanceOf[ChannelReadyTlv.ShortChannelIdTlv]))
     bob2alice.forward(alice, channelReadyNoAlias)
@@ -119,7 +119,7 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
   test("recv ChannelReady (zero-conf)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(ChannelStateTestsTags.ZeroConf)) { f =>
     import f._
     // zero-conf channel: we don't have a real scid
-    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_CHANNEL_READY].shortChannelId_opt.isEmpty)
+    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_CHANNEL_READY].realShortChannelId_opt.isEmpty)
     val channelReady = bob2alice.expectMsgType[ChannelReady]
     bob2alice.forward(alice)
     val initialChannelUpdate = alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate
@@ -134,7 +134,7 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
   test("recv ChannelReady (zero-conf, no alias)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(ChannelStateTestsTags.ZeroConf)) { f =>
     import f._
     // zero-conf channel: we don't have a real scid
-    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_CHANNEL_READY].shortChannelId_opt.isEmpty)
+    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_CHANNEL_READY].realShortChannelId_opt.isEmpty)
     val channelReady = bob2alice.expectMsgType[ChannelReady]
     val channelReadyNoAlias = channelReady.modify(_.tlvStream.records).using(_.filterNot(_.isInstanceOf[ChannelReadyTlv.ShortChannelIdTlv]))
     bob2alice.forward(alice, channelReadyNoAlias)

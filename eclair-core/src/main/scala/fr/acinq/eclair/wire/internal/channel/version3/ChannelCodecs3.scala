@@ -325,21 +325,21 @@ private[channel] object ChannelCodecs3 {
 
     val DATA_WAIT_FOR_CHANNEL_READY_COMPAT_01_Codec: Codec[DATA_WAIT_FOR_CHANNEL_READY] = (
       ("commitments" | commitmentsCodec) ::
-        ("shortChannelId" | shortchannelid) ::
+        ("shortChannelId" | realshortchannelid) ::
         ("lastSent" | lengthDelimited(channelReadyCodec))).map {
       case commitments :: shortChannelId :: lastSent :: HNil =>
-        DATA_WAIT_FOR_CHANNEL_READY(commitments, shortChannelId_opt = Some(shortChannelId), localAlias = shortChannelId, lastSent = lastSent)
+        DATA_WAIT_FOR_CHANNEL_READY(commitments, realShortChannelId_opt = Some(shortChannelId), localAlias = shortChannelId, lastSent = lastSent)
     }.decodeOnly
 
     val DATA_WAIT_FOR_CHANNEL_READY_Codec: Codec[DATA_WAIT_FOR_CHANNEL_READY] = (
       ("commitments" | commitmentsCodec) ::
-        ("shortChannelId_opt" | optional(bool8, shortchannelid)) ::
+        ("realShortChannelId_opt" | optional(bool8, realshortchannelid)) ::
         ("localAlias" | shortchannelid) ::
         ("lastSent" | lengthDelimited(channelReadyCodec))).as[DATA_WAIT_FOR_CHANNEL_READY]
 
     val DATA_NORMAL_COMPAT_02_Codec: Codec[DATA_NORMAL] = (
       ("commitments" | commitmentsCodec) ::
-        ("shortChannelId" | shortchannelid) ::
+        ("shortChannelId" | realshortchannelid) ::
         ("buried" | bool8) ::
         ("channelAnnouncement" | optional(bool8, lengthDelimited(channelAnnouncementCodec))) ::
         ("channelUpdate" | lengthDelimited(channelUpdateCodec)) ::
@@ -347,12 +347,12 @@ private[channel] object ChannelCodecs3 {
         ("remoteShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
         ("closingFeerates" | provide(Option.empty[ClosingFeerates]))).map {
       case commitments :: shortChannelId :: buried :: channelAnnouncement :: channelUpdate :: localShutdown :: remoteShutdown :: closingFeerates :: HNil =>
-        DATA_NORMAL(commitments, shortChannelId_opt = Some(shortChannelId), buried = buried, channelAnnouncement, channelUpdate, localAlias = shortChannelId, remoteAlias_opt = None, localShutdown, remoteShutdown, closingFeerates)
+        DATA_NORMAL(commitments, realShortChannelId_opt = Some(shortChannelId), buried = buried, channelAnnouncement, channelUpdate, localAlias = shortChannelId, remoteAlias_opt = None, localShutdown, remoteShutdown, closingFeerates)
     }.decodeOnly
 
     val DATA_NORMAL_COMPAT_07_Codec: Codec[DATA_NORMAL] = (
       ("commitments" | commitmentsCodec) ::
-        ("shortChannelId" | shortchannelid) ::
+        ("shortChannelId" | realshortchannelid) ::
         ("buried" | bool8) ::
         ("channelAnnouncement" | optional(bool8, lengthDelimited(channelAnnouncementCodec))) ::
         ("channelUpdate" | lengthDelimited(channelUpdateCodec)) ::
@@ -360,12 +360,12 @@ private[channel] object ChannelCodecs3 {
         ("remoteShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
         ("closingFeerates" | optional(bool8, closingFeeratesCodec))).map {
       case commitments :: shortChannelId :: buried :: channelAnnouncement :: channelUpdate :: localShutdown :: remoteShutdown :: closingFeerates :: HNil =>
-        DATA_NORMAL(commitments, shortChannelId_opt = Some(shortChannelId), buried = buried, channelAnnouncement, channelUpdate, localAlias = shortChannelId, remoteAlias_opt = None, localShutdown, remoteShutdown, closingFeerates)
+        DATA_NORMAL(commitments, realShortChannelId_opt = Some(shortChannelId), buried = buried, channelAnnouncement, channelUpdate, localAlias = shortChannelId, remoteAlias_opt = None, localShutdown, remoteShutdown, closingFeerates)
     }.decodeOnly
 
     val DATA_NORMAL_Codec: Codec[DATA_NORMAL] = (
       ("commitments" | commitmentsCodec) ::
-        ("shortChannelId_opt" | optional(bool8, shortchannelid)) ::
+        ("shortChannelId_opt" | optional(bool8, realshortchannelid)) ::
         ("buried" | bool8) ::
         ("channelAnnouncement" | optional(bool8, lengthDelimited(channelAnnouncementCodec))) ::
         ("channelUpdate" | lengthDelimited(channelUpdateCodec)) ::

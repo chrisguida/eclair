@@ -49,7 +49,7 @@ class Register extends Actor with ActorLogging {
 
     case scidAssigned: ShortChannelIdAssigned =>
       // we map all known scids (real or alias) to the channel_id
-      val m = (scidAssigned.shortChannelId_opt.toSeq :+ scidAssigned.localAlias).map(_ -> scidAssigned.channelId).toMap
+      val m = (scidAssigned.realShortChannelId_opt.toSeq :+ scidAssigned.localAlias).map(_ -> scidAssigned.channelId).toMap
       context become main(channels, shortIds ++ m, channelsTo)
 
     case Terminated(actor) if channels.values.toSet.contains(actor) =>

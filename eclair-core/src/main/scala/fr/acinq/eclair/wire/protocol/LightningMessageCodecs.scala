@@ -17,9 +17,10 @@
 package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.bitcoin.scalacompat.ScriptWitness
+import fr.acinq.eclair.RealShortChannelId
 import fr.acinq.eclair.wire.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
-import fr.acinq.eclair.{Feature, Features, InitFeature, KamonExt}
+import fr.acinq.eclair.{Feature, Features, InitFeature, KamonExt, ShortChannelId}
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
 import scodec.{Attempt, Codec}
@@ -288,7 +289,7 @@ object LightningMessageCodecs {
 
   val announcementSignaturesCodec: Codec[AnnouncementSignatures] = (
     ("channelId" | bytes32) ::
-      ("shortChannelId" | shortchannelid) ::
+      ("shortChannelId" | realshortchannelid) ::
       ("nodeSignature" | bytes64) ::
       ("bitcoinSignature" | bytes64) ::
       ("tlvStream" | AnnouncementSignaturesTlv.announcementSignaturesTlvCodec)).as[AnnouncementSignatures]
@@ -296,7 +297,7 @@ object LightningMessageCodecs {
   val channelAnnouncementWitnessCodec =
     ("features" | featuresCodec) ::
       ("chainHash" | bytes32) ::
-      ("shortChannelId" | shortchannelid) ::
+      ("shortChannelId" | realshortchannelid) ::
       ("nodeId1" | publicKey) ::
       ("nodeId2" | publicKey) ::
       ("bitcoinKey1" | publicKey) ::
@@ -375,10 +376,10 @@ object LightningMessageCodecs {
       .\(0) {
         case a@EncodedShortChannelIds(_, Nil) => a // empty list is always encoded with encoding type 'uncompressed' for compatibility with other implementations
         case a@EncodedShortChannelIds(EncodingType.UNCOMPRESSED, _) => a
-      }((provide[EncodingType](EncodingType.UNCOMPRESSED) :: list(shortchannelid)).as[EncodedShortChannelIds])
+      }((provide[EncodingType](EncodingType.UNCOMPRESSED) :: list(realshortchannelid)).as[EncodedShortChannelIds])
       .\(1) {
         case a@EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, _) => a
-      }((provide[EncodingType](EncodingType.COMPRESSED_ZLIB) :: zlib(list(shortchannelid))).as[EncodedShortChannelIds])
+      }((provide[EncodingType](EncodingType.COMPRESSED_ZLIB) :: zlib(list(realshortchannelid))).as[EncodedShortChannelIds])
 
   val queryShortChannelIdsCodec: Codec[QueryShortChannelIds] = (
     ("chainHash" | bytes32) ::

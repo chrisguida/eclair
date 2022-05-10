@@ -20,7 +20,6 @@ import akka.actor.{ActorContext, ActorRef, Status}
 import akka.event.DiagnosticLoggingAdapter
 import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64}
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair._
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
@@ -29,7 +28,6 @@ import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.Graph.{InfiniteLoop, NegativeProbability, RichWeight, RoutingHeuristics}
 import fr.acinq.eclair.router.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.router.Router._
-import fr.acinq.eclair.wire.protocol.ChannelUpdate
 import kamon.tag.TagSet
 
 import scala.annotation.tailrec
@@ -63,27 +61,26 @@ object RouteCalculation {
               // some nodes in the supplied route aren't connected in our graph
               ctx.sender() ! Status.Failure(new IllegalArgumentException("Not all the nodes in the supplied route are connected with public channels"))
           }
-        case PredefinedChannelRoute(targetNodeId, channels) =>
-          val (end, hops) = channels.foldLeft((localNodeId, Seq.empty[ChannelHop])) {
-            case ((start, current), shortChannelId) =>
-              val channelDesc_opt = d.channels.get(shortChannelId).flatMap(c => start match {
-                case c.ann.nodeId1 => Some(ChannelDesc(shortChannelId, c.ann.nodeId1, c.ann.nodeId2))
-                case c.ann.nodeId2 => Some(ChannelDesc(shortChannelId, c.ann.nodeId2, c.ann.nodeId1))
-                case _ => None
-              }).orElse(d.getPrivateChannel(shortChannelId).flatMap(c => start match {
-                case c.nodeId1 => Some(ChannelDesc(c.localAlias, c.nodeId1, c.nodeId2))
-                case c.nodeId2 => Some(ChannelDesc(c.localAlias, c.nodeId2, c.nodeId1))
-                case _ => None
-              })).orElse(assistedChannels.get(shortChannelId).flatMap(c => start match {
-                case c.nodeId => Some(ChannelDesc(shortChannelId, c.nodeId, c.nextNodeId))
-                case _ => None
-              }))
+        case PredefinedChannelRoute(targetNodeId, shortChannelIds) =>
+          val (end, hops) = shortChannelIds.foldLeft((localNodeId, Seq.empty[ChannelHop])) {
+            case ((currentNode, previousHops), shortChannelId) =>
+              val channelDesc_opt = d.resolve(shortChannelId) match {
+                case Some(c) => currentNode match {
+                  case c.nodeId1 => Some(ChannelDesc(shortChannelId, c.nodeId1, c.nodeId2))
+                  case c.nodeId2 => Some(ChannelDesc(shortChannelId, c.nodeId2, c.nodeId1))
+                  case _ => None
+                }
+                case None => assistedChannels.get(shortChannelId).flatMap(c => currentNode match {
+                  case c.nodeId => Some(ChannelDesc(shortChannelId, c.nodeId, c.nextNodeId))
+                  case _ => None
+                })
+              }
               channelDesc_opt.flatMap(c => g.getEdge(c)) match {
-                case Some(edge) => (edge.desc.b, current :+ ChannelHop(edge.desc.shortChannelId, edge.desc.a, edge.desc.b, edge.source))
-                case None => (start, current)
+                case Some(edge) => (edge.desc.b, previousHops :+ ChannelHop(edge.desc.shortChannelId, edge.desc.a, edge.desc.b, edge.source))
+                case None => (currentNode, previousHops)
               }
           }
-          if (end != targetNodeId || hops.length != channels.length) {
+          if (end != targetNodeId || hops.length != shortChannelIds.length) {
             ctx.sender() ! Status.Failure(new IllegalArgumentException("The sequence of channels provided cannot be used to build a route to the target node"))
           } else {
             ctx.sender() ! RouteResponse(Route(fr.amount, hops) :: Nil)

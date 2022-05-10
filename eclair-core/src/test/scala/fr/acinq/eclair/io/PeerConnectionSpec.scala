@@ -333,7 +333,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
 
     val query = QueryShortChannelIds(
       Alice.nodeParams.chainHash,
-      EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(42000))),
+      EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(realScid(42000))),
       TlvStream.empty)
 
     // make sure that routing messages go through

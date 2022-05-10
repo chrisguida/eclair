@@ -326,20 +326,24 @@ object Router {
     }
   }
   case class ChannelMeta(balance1: MilliSatoshi, balance2: MilliSatoshi)
-  sealed trait ChannelDetails {
+  sealed trait KnownChannel {
     val capacity: Satoshi
+    val nodeId1: PublicKey
+    val nodeId2: PublicKey
     def getNodeIdSameSideAs(u: ChannelUpdate): PublicKey
     def getChannelUpdateSameSideAs(u: ChannelUpdate): Option[ChannelUpdate]
     def getBalanceSameSideAs(u: ChannelUpdate): Option[MilliSatoshi]
-    def updateChannelUpdateSameSideAs(u: ChannelUpdate): ChannelDetails
-    def updateBalances(commitments: AbstractCommitments): ChannelDetails
-    def applyChannelUpdate(update: Either[LocalChannelUpdate, RemoteChannelUpdate]): ChannelDetails
+    def updateChannelUpdateSameSideAs(u: ChannelUpdate): KnownChannel
+    def updateBalances(commitments: AbstractCommitments): KnownChannel
+    def applyChannelUpdate(update: Either[LocalChannelUpdate, RemoteChannelUpdate]): KnownChannel
   }
-  case class PublicChannel(ann: ChannelAnnouncement, fundingTxid: ByteVector32, capacity: Satoshi, update_1_opt: Option[ChannelUpdate], update_2_opt: Option[ChannelUpdate], meta_opt: Option[ChannelMeta]) extends ChannelDetails {
+  case class PublicChannel(ann: ChannelAnnouncement, fundingTxid: ByteVector32, capacity: Satoshi, update_1_opt: Option[ChannelUpdate], update_2_opt: Option[ChannelUpdate], meta_opt: Option[ChannelMeta]) extends KnownChannel {
     update_1_opt.foreach(u => assert(u.channelFlags.isNode1))
     update_2_opt.foreach(u => assert(!u.channelFlags.isNode1))
 
-    def shortChannelId: ShortChannelId = ann.shortChannelId
+    val nodeId1: PublicKey = ann.nodeId1
+    val nodeId2: PublicKey = ann.nodeId2
+    def shortChannelId: RealShortChannelId = ann.shortChannelId
     def channelId: ByteVector32 = toLongId(fundingTxid.reverse, outputIndex(ann.shortChannelId))
     def getNodeIdSameSideAs(u: ChannelUpdate): PublicKey = if (u.channelFlags.isNode1) ann.nodeId1 else ann.nodeId2
     def getChannelUpdateSameSideAs(u: ChannelUpdate): Option[ChannelUpdate] = if (u.channelFlags.isNode1) update_1_opt else update_2_opt
@@ -355,7 +359,7 @@ object Router {
       case Right(rcu) => updateChannelUpdateSameSideAs(rcu.channelUpdate)
     }
   }
-  case class PrivateChannel(localAlias: ShortChannelId, channelId: ByteVector32, localNodeId: PublicKey, remoteNodeId: PublicKey, update_1_opt: Option[ChannelUpdate], update_2_opt: Option[ChannelUpdate], meta: ChannelMeta) extends ChannelDetails {
+  case class PrivateChannel(localAlias: ShortChannelId, channelId: ByteVector32, localNodeId: PublicKey, remoteNodeId: PublicKey, update_1_opt: Option[ChannelUpdate], update_2_opt: Option[ChannelUpdate], meta: ChannelMeta) extends KnownChannel {
     val (nodeId1, nodeId2) = if (Announcements.isNode1(localNodeId, remoteNodeId)) (localNodeId, remoteNodeId) else (remoteNodeId, localNodeId)
     val capacity: Satoshi = (meta.balance1 + meta.balance2).truncateToSatoshi
 
@@ -621,7 +625,7 @@ object Router {
   case class Rebroadcast(channels: Map[ChannelAnnouncement, Set[GossipOrigin]], updates: Map[ChannelUpdate, Set[GossipOrigin]], nodes: Map[NodeAnnouncement, Set[GossipOrigin]])
   // @formatter:on
 
-  case class ShortChannelIdAndFlag(shortChannelId: ShortChannelId, flag: Long)
+  case class ShortChannelIdAndFlag(shortChannelId: RealShortChannelId, flag: Long)
 
   /**
    * @param remainingQueries remaining queries to send, the next one will be popped after we receive a [[ReplyShortChannelIdsEnd]]
@@ -640,7 +644,7 @@ object Router {
   // @formatter:on
 
   case class Data(nodes: Map[PublicKey, NodeAnnouncement],
-                  channels: SortedMap[ShortChannelId, PublicChannel],
+                  channels: SortedMap[RealShortChannelId, PublicChannel],
                   stash: Stash,
                   rebroadcast: Rebroadcast,
                   awaiting: Map[ChannelAnnouncement, Seq[RemoteGossip]], // note: this is a seq because we want to preserve order: first actor is the one who we need to send a tcp-ack when validation is done
@@ -650,7 +654,27 @@ object Router {
                   graph: DirectedGraph,
                   sync: Map[PublicKey, Syncing] // keep tracks of channel range queries sent to each peer. If there is an entry in the map, it means that there is an ongoing query for which we have not yet received an 'end' message
                  ) {
-    def getPrivateChannel(scid: ShortChannelId): Option[PrivateChannel] = resolveScid.get(scid).flatMap(privateChannels.get)
+
+    def resolve(scid: ShortChannelId): Option[KnownChannel] = {
+      // let's assume this is a real scid
+      channels.get(ShortChannelId.toReal(scid)) match {
+        case Some(publicChannel) => Some(publicChannel)
+        case None =>
+          // maybe it's an alias or a real scid
+          resolveScid.get(scid).flatMap(privateChannels.get) match {
+            case Some(privateChannel) => Some(privateChannel)
+            case None => None
+          }
+      }
+    }
+
+    def resolve(scids: Option[ShortChannelId]*): Option[KnownChannel] = {
+      scids.foldLeft(Option.empty[KnownChannel]) {
+        case (None, Some(scid)) => resolve(scid) // try resolution
+        case (None, None) => None // no scid: skip
+        case (result@Some(_), _) => result // result already found: skip
+      }
+    }
   }
 
   // @formatter:off

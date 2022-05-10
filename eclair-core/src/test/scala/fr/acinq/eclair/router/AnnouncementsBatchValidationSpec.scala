@@ -64,10 +64,10 @@ class AnnouncementsBatchValidationSpec extends AnyFunSuite {
     bitcoinClient.validate(announcements(0)).pipeTo(sender.ref)
     sender.expectMsgType[ValidateResult].fundingTx.isRight
 
-    bitcoinClient.validate(announcements(1).copy(shortChannelId = ShortChannelId(Long.MaxValue))).pipeTo(sender.ref) // invalid block height
+    bitcoinClient.validate(announcements(1).copy(shortChannelId = ShortChannelId(Long.MaxValue).toReal)).pipeTo(sender.ref) // invalid block height
     sender.expectMsgType[ValidateResult].fundingTx.isRight
 
-    bitcoinClient.validate(announcements(2).copy(shortChannelId = ShortChannelId(BlockHeight(500), 1000, 0))).pipeTo(sender.ref) // invalid tx index
+    bitcoinClient.validate(announcements(2).copy(shortChannelId = ShortChannelId(BlockHeight(500), 1000, 0).toReal)).pipeTo(sender.ref) // invalid tx index
     sender.expectMsgType[ValidateResult].fundingTx.isRight
   }
 
@@ -101,7 +101,7 @@ object AnnouncementsBatchValidationSpec {
 
   def makeChannelAnnouncement(c: SimulatedChannel, bitcoinClient: BitcoinCoreClient)(implicit ec: ExecutionContext): ChannelAnnouncement = {
     val (blockHeight, txIndex) = Await.result(bitcoinClient.getTransactionShortId(c.fundingTx.txid), 10 seconds)
-    val shortChannelId = ShortChannelId(blockHeight, txIndex, c.fundingOutputIndex)
+    val shortChannelId = ShortChannelId(blockHeight, txIndex, c.fundingOutputIndex).toReal
     val witness = Announcements.generateChannelAnnouncementWitness(Block.RegtestGenesisBlock.hash, shortChannelId, c.node1Key.publicKey, c.node2Key.publicKey, c.node1FundingKey.publicKey, c.node2FundingKey.publicKey, Features.empty)
     val channelAnnNodeSig1 = Announcements.signChannelAnnouncement(witness, c.node1Key)
     val channelAnnBitcoinSig1 = Announcements.signChannelAnnouncement(witness, c.node1FundingKey)

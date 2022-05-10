@@ -21,6 +21,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey, sha256}
 import fr.acinq.bitcoin.scalacompat.Script._
 import fr.acinq.bitcoin.scalacompat._
 import fr.acinq.bitcoin.ScriptFlags
+import fr.acinq.eclair.RealShortChannelId
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.OnChainAddressGenerator
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeeratePerKw}
@@ -230,7 +231,7 @@ object Helpers {
     }
   }
 
-  def scidForChannelUpdate(d: DATA_NORMAL)(implicit log: DiagnosticLoggingAdapter): ShortChannelId = scidForChannelUpdate(d.commitments.channelFlags, d.shortChannelId_opt, d.remoteAlias_opt)
+  def scidForChannelUpdate(d: DATA_NORMAL)(implicit log: DiagnosticLoggingAdapter): ShortChannelId = scidForChannelUpdate(d.commitments.channelFlags, d.realShortChannelId_opt, d.remoteAlias_opt)
 
   /**
    * Compute the delay until we need to refresh the channel_update for our channel not to be considered stale by
@@ -257,7 +258,7 @@ object Helpers {
     remoteFeeratePerKw < FeeratePerKw.MinimumFeeratePerKw
   }
 
-  def makeAnnouncementSignatures(nodeParams: NodeParams, commitments: Commitments, shortChannelId: ShortChannelId): AnnouncementSignatures = {
+  def makeAnnouncementSignatures(nodeParams: NodeParams, commitments: Commitments, shortChannelId: RealShortChannelId): AnnouncementSignatures = {
     val features = Features.empty[Feature] // empty features for now
     val fundingPubKey = nodeParams.channelKeyManager.fundingPublicKey(commitments.localParams.fundingKeyPath)
     val witness = Announcements.generateChannelAnnouncementWitness(

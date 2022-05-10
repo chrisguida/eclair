@@ -16,6 +16,9 @@
 
 package fr.acinq.eclair
 
+sealed trait RealShortChannelId extends ShortChannelId
+sealed trait LocalAlias extends ShortChannelId
+
 /**
  * A short channel id uniquely identifies a channel by the coordinates of its funding tx output in the blockchain.
  * See BOLT 7: https://github.com/lightningnetwork/lightning-rfc/blob/master/07-routing-gossip.md#requirements
@@ -42,7 +45,7 @@ object ShortChannelId {
     case _ => throw new IllegalArgumentException(s"Invalid short channel id: $s")
   }
 
-  def apply(blockHeight: BlockHeight, txIndex: Int, outputIndex: Int): ShortChannelId = ShortChannelId(toShortId(blockHeight.toInt, txIndex, outputIndex))
+  def apply(blockHeight: BlockHeight, txIndex: Int, outputIndex: Int): RealShortChannelId = toReal(ShortChannelId(toShortId(blockHeight.toInt, txIndex, outputIndex)))
 
   def toShortId(blockHeight: Int, txIndex: Int, outputIndex: Int): Long = ((blockHeight & 0xFFFFFFL) << 40) | ((txIndex & 0xFFFFFFL) << 16) | (outputIndex & 0xFFFFL)
 
@@ -57,7 +60,10 @@ object ShortChannelId {
 
   def coordinates(shortChannelId: ShortChannelId): TxCoordinates = TxCoordinates(blockHeight(shortChannelId), txIndex(shortChannelId), outputIndex(shortChannelId))
 
-  def generateLocalAlias(): ShortChannelId = ShortChannelId(System.nanoTime()) // TODO: fixme (duplicate, etc.)
+  /** Careful: only call this if you are sure that this scid is actually a real scid */
+  def toReal(scid: ShortChannelId): RealShortChannelId = new ShortChannelId(scid.id) with RealShortChannelId
+
+  def generateLocalAlias(): LocalAlias = new ShortChannelId(System.nanoTime()) with LocalAlias // TODO: fixme (duplicate, etc.)
 }
 
 case class TxCoordinates(blockHeight: BlockHeight, txIndex: Int, outputIndex: Int)
