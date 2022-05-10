@@ -61,7 +61,7 @@ class ShortChannelIdSpec extends AnyFunSuite {
   test("scids key space") {
 
     val alias = ShortChannelId.generateLocalAlias()
-    val realScid = ShortChannelId.toReal(alias)
+    val realScid = alias.toReal
     val scid = ShortChannelId(realScid.toLong)
 
     val m = Map(alias -> "alias", realScid -> "real", scid -> "unknown")

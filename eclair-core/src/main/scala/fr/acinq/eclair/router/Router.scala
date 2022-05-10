@@ -635,14 +635,6 @@ object Router {
     def started: Boolean = totalQueries > 0
   }
 
-  // @formatter:off
-  sealed trait ChannelUpdateId
-  object ChannelUpdateId {
-    final case class RealScid(scid: ShortChannelId) extends ChannelUpdateId
-    final case class LocalAlias(alias: ShortChannelId) extends ChannelUpdateId
-  }
-  // @formatter:on
-
   case class Data(nodes: Map[PublicKey, NodeAnnouncement],
                   channels: SortedMap[RealShortChannelId, PublicChannel],
                   stash: Stash,
@@ -657,7 +649,7 @@ object Router {
 
     def resolve(scid: ShortChannelId): Option[KnownChannel] = {
       // let's assume this is a real scid
-      channels.get(ShortChannelId.toReal(scid)) match {
+      channels.get(scid.toReal) match {
         case Some(publicChannel) => Some(publicChannel)
         case None =>
           // maybe it's an alias or a real scid
@@ -674,6 +666,10 @@ object Router {
         case (None, None) => None // no scid: skip
         case (result@Some(_), _) => result // result already found: skip
       }
+    }
+
+    def resolve(channelId: ByteVector32, realScid_opt: Option[RealShortChannelId]): Option[KnownChannel] = {
+      privateChannels.get(channelId).orElse(realScid_opt.flatMap(channels.get))
     }
   }
 

@@ -18,6 +18,7 @@ package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64}
 import fr.acinq.eclair.RealShortChannelId
+import fr.acinq.eclair.TestUtils.realScid
 import fr.acinq.eclair.router.Sync
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
 import fr.acinq.eclair.wire.protocol.ReplyChannelRangeTlv._

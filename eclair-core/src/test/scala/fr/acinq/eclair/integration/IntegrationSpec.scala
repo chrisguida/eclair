@@ -200,11 +200,10 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
           sender.expectMsgType[Iterable[ChannelAnnouncement]].size == channels
         }, max = 60 seconds, interval = 1 second)
         awaitCond({
-//          setup.router ! Router.PrintChannelUpdates
+          println(node)
+          setup.router ! Router.PrintChannelUpdates
           sender.send(setup.router, Router.GetChannelUpdates)
-          val u = sender.expectMsgType[Iterable[ChannelUpdate]]
-          println(s"u=${u.size} target=$updates")
-          u.size == updates
+          sender.expectMsgType[Iterable[ChannelUpdate]].size == updates
         }, max = 60 seconds, interval = 1 second)
     }
   }
@@ -216,6 +215,9 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
         awaitCond({
           sender.send(setup.router, Router.GetRouterData)
           val d = sender.expectMsgType[Router.Data]
+
+          println(node)
+          setup.router ! Router.PrintChannelUpdates
 
           val nodeCount = d.nodes.size
           val channelCount = d.channels.size

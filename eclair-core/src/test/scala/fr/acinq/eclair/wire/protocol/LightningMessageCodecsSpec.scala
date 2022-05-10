@@ -22,6 +22,7 @@ import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, SatoshiL
 import fr.acinq.eclair.FeatureSupport.Optional
 import fr.acinq.eclair.Features.DataLossProtect
 import fr.acinq.eclair.RealShortChannelId
+import fr.acinq.eclair.TestUtils.realScid
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.{ChannelFlags, ChannelTypes}
@@ -585,6 +586,12 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
       assert(decoded.remainder.isEmpty)
       assert(channelFlagsCodec.encode(ref).require === bin)
     }
+  }
+
+  test("serialize channel_update with real scid") {
+    val channel_update = ChannelUpdate(randomBytes64(), Block.RegtestGenesisBlock.hash, ShortChannelId(1).toReal, 2 unixsec, ChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(3), 4 msat, 5 msat, 6, None)
+
+    println(lightningMessageCodec.encode(channel_update).require.toHex)
   }
 
 }

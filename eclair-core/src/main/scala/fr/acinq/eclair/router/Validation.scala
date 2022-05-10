@@ -122,8 +122,13 @@ object Validation {
             }
             // public channels that haven't yet been announced are considered as private channels
             val channelId = toLongId(tx.txid.reverse, outputIndex)
-            val channelMeta_opt = d0.privateChannels.get(channelId).map(_.meta)
-            Some(PublicChannel(c, tx.txid, capacity, None, None, channelMeta_opt))
+            val privateChannel_opt = d0.privateChannels.get(channelId)
+            Some(PublicChannel(c,
+              tx.txid,
+              capacity,
+              update_1_opt = privateChannel_opt.flatMap(_.update_1_opt),
+              update_2_opt = privateChannel_opt.flatMap(_.update_2_opt),
+              meta_opt = privateChannel_opt.map(_.meta)))
           }
         case ValidateResult(c, Right((tx, fundingTxStatus: UtxoStatus.Spent))) =>
           if (fundingTxStatus.spendingTxConfirmed) {
@@ -138,7 +143,7 @@ object Validation {
           db.removeChannel(c.shortChannelId)
           None
       }
-      // we also reprocess node and channel_update announcements related to channels that were just analyzed
+      // we also reprocess node and channel_update announcements related to the channel that was just analyzed
       val reprocessUpdates = d0.stash.updates.view.filterKeys(u => u.shortChannelId == c.shortChannelId)
       val reprocessNodes = d0.stash.nodes.view.filterKeys(n => isRelatedTo(c, n.nodeId))
       // and we remove the reprocessed messages from the stash
@@ -148,12 +153,17 @@ object Validation {
 
       publicChannel_opt match {
         case Some(pc) =>
-          // note: if the channel is graduating from private to public, the implementation (in the LocalChannelUpdate handler) guarantees that we will process a new channel_update
-          // right after the channel_announcement, channel_updates will be moved from private to public at that time
+          val publicChannelUpdates = (pc.update_1_opt.toSeq ++ pc.update_2_opt.toSeq)
+            .filter(_.shortChannelId == pc.shortChannelId)
+            .map(u => (u, Set.empty[GossipOrigin]))
+            .toMap
+          val rebroadcast1 = d0.rebroadcast
+            .modify(_.channels).using(_ + (c -> d0.awaiting.getOrElse(c, Nil).toSet)) // we also add the newly validated channels to the rebroadcast queue
+            .modify(_.updates).using(_ ++ publicChannelUpdates) // and we broadcast channel_updates that use the real scid
           val d1 = d0.copy(
             channels = d0.channels + (c.shortChannelId -> pc),
             privateChannels = d0.privateChannels - pc.channelId, // we remove the corresponding private channel that we may have made before
-            rebroadcast = d0.rebroadcast.copy(channels = d0.rebroadcast.channels + (c -> d0.awaiting.getOrElse(c, Nil).toSet)), // we also add the newly validated channels to the rebroadcast queue
+            rebroadcast = rebroadcast1,
             stash = stash1,
             awaiting = awaiting1)
           // we only reprocess updates and nodes if validation succeeded
@@ -254,7 +264,7 @@ object Validation {
   def handleChannelUpdate(d: Data, db: NetworkDb, routerConf: RouterConf, update: Either[LocalChannelUpdate, RemoteChannelUpdate], wasStashed: Boolean = false)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
     val (pc_opt: Option[KnownChannel], u: ChannelUpdate, origins: Set[GossipOrigin]) = update match {
-      case Left(lcu) => (lcu.realShortChannelId_opt.flatMap(d.resolve), lcu.channelUpdate, Set(LocalGossip))
+      case Left(lcu) => (d.resolve(lcu.channelId, lcu.realShortChannelId_opt), lcu.channelUpdate, Set(LocalGossip))
       case Right(rcu) =>
         rcu.origins.collect {
           case RemoteGossip(peerConnection, _) if !wasStashed => // stashed changes have already been acknowledged
@@ -372,7 +382,7 @@ object Validation {
         }
       case None if db.isPruned(u.shortChannelId) && !StaleChannels.isStale(u) =>
         // only public channels are pruned
-        val realShortChannelId = ShortChannelId.toReal(u.shortChannelId)
+        val realShortChannelId = u.shortChannelId.toReal
           // the channel was recently pruned, but if we are here, it means that the update is not stale so this is the case
           // of a zombie channel coming back from the dead. they probably sent us a channel_announcement right before this update,
           // but we ignored it because the channel was in the 'pruned' list. Now that we know that the channel is alive again,

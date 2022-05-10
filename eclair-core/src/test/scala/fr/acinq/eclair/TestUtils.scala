@@ -89,6 +89,6 @@ object TestUtils {
     seedFile
   }
 
-  def realScid(l: Long): RealShortChannelId = ShortChannelId.toReal(ShortChannelId(l))
+  def realScid(l: Long): RealShortChannelId = ShortChannelId(l).toReal
 
 }

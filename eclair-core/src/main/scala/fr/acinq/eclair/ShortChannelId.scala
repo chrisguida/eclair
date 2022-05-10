@@ -27,6 +27,9 @@ case class ShortChannelId(private val id: Long) extends Ordered[ShortChannelId] 
 
   def toLong: Long = id
 
+  /** Careful: only call this if you are sure that this scid is actually a real scid */
+  def toReal: RealShortChannelId = new ShortChannelId(id) with RealShortChannelId
+
   def blockHeight = ShortChannelId.blockHeight(this)
 
   override def toString: String = {
@@ -45,7 +48,7 @@ object ShortChannelId {
     case _ => throw new IllegalArgumentException(s"Invalid short channel id: $s")
   }
 
-  def apply(blockHeight: BlockHeight, txIndex: Int, outputIndex: Int): RealShortChannelId = toReal(ShortChannelId(toShortId(blockHeight.toInt, txIndex, outputIndex)))
+  def apply(blockHeight: BlockHeight, txIndex: Int, outputIndex: Int): RealShortChannelId = ShortChannelId(toShortId(blockHeight.toInt, txIndex, outputIndex)).toReal
 
   def toShortId(blockHeight: Int, txIndex: Int, outputIndex: Int): Long = ((blockHeight & 0xFFFFFFL) << 40) | ((txIndex & 0xFFFFFFL) << 16) | (outputIndex & 0xFFFFL)
 
@@ -59,9 +62,6 @@ object ShortChannelId {
   def outputIndex(shortChannelId: ShortChannelId): Int = (shortChannelId.id & 0xFFFF).toInt
 
   def coordinates(shortChannelId: ShortChannelId): TxCoordinates = TxCoordinates(blockHeight(shortChannelId), txIndex(shortChannelId), outputIndex(shortChannelId))
-
-  /** Careful: only call this if you are sure that this scid is actually a real scid */
-  def toReal(scid: ShortChannelId): RealShortChannelId = new ShortChannelId(scid.id) with RealShortChannelId
 
   def generateLocalAlias(): LocalAlias = new ShortChannelId(System.nanoTime()) with LocalAlias // TODO: fixme (duplicate, etc.)
 }
