@@ -3721,7 +3721,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val aliceChannelUpdate = alice2bob.expectMsgType[ChannelUpdate]
     val bobChannelUpdate = bob2alice.expectMsgType[ChannelUpdate]
 
-    assert(aliceLocalChannelUpdate.localAlias == bobChannelUpdate.shortChannelId)
+    assert(aliceLocalChannelUpdate.realShortChannelId_opt.get == bobChannelUpdate.shortChannelId)
 
     val watcher = TestProbe()
     import com.softwaremill.quicklens._
