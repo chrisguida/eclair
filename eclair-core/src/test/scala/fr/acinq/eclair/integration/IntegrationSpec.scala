@@ -191,7 +191,6 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
     val sender = TestProbe()
     subset.foreach {
       case (node, setup) =>
-        println(s"checking announcements for $node")
         awaitCond({
           sender.send(setup.router, Router.GetNodes)
           sender.expectMsgType[Iterable[NodeAnnouncement]].size == nodes
@@ -201,7 +200,7 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
           sender.expectMsgType[Iterable[ChannelAnnouncement]].size == channels
         }, max = 60 seconds, interval = 1 second)
         awaitCond({
-          setup.router ! Router.PrintChannelUpdates
+//          setup.router ! Router.PrintChannelUpdates
           sender.send(setup.router, Router.GetChannelUpdates)
           val u = sender.expectMsgType[Iterable[ChannelUpdate]]
           println(s"u=${u.size} target=$updates")
@@ -214,8 +213,6 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
     val sender = TestProbe()
     subset.foreach {
       case (node, setup) =>
-        println(s"checking announcements for $node")
-
         awaitCond({
           sender.send(setup.router, Router.GetRouterData)
           val d = sender.expectMsgType[Router.Data]
@@ -224,8 +221,6 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
           val channelCount = d.channels.size
           val publicUpdateCount = d.channels.values.flatMap(c => c.update_1_opt.toSeq ++ c.update_2_opt.toSeq).size
           val privateUpdateCount = d.privateChannels.values.flatMap(c => c.update_1_opt.toSeq ++ c.update_2_opt.toSeq).size
-
-          println(s"nodes=$nodeCount channels=$channelCount publicUpdates=$publicUpdateCount privateUpdates=$privateUpdateCount")
 
           nodeCount == nodes && channelCount == channels && publicUpdateCount == publicUpdates && privateUpdateCount == privateUpdates
 
