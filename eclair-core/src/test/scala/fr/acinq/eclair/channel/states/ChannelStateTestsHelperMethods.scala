@@ -27,7 +27,8 @@ import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.{FeeTargets, FeeratePerKw}
-import fr.acinq.eclair.blockchain.{DummyOnChainWallet, OnChainWallet}
+import fr.acinq.eclair.blockchain.{DummyOnChainWallet, OnChainWallet, SingleKeyOnChainWallet}
+import fr.acinq.eclair.channel.InteractiveTxBuilder.FullySignedSharedTransaction
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.publish.TxPublisher
@@ -75,8 +76,6 @@ object ChannelStateTestsTags {
   val ChannelsPublic = "channels_public"
   /** If set, no amount will be pushed when opening a channel (by default we push a small amount). */
   val NoPushMsat = "no_push_msat"
-  /** If set, the non-initiator of a dual-funded channel will contribute some funds. */
-  val DualFundingContribution = "dual_funding_contribution"
   /** If set, max-htlc-value-in-flight will be set to the highest possible value for Alice and Bob. */
   val NoMaxHtlcValueInFlight = "no_max_htlc_value_in_flight"
   /** If set, max-htlc-value-in-flight will be set to a low value for Alice. */
@@ -110,7 +109,7 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
     def currentBlockHeight: BlockHeight = alice.underlyingActor.nodeParams.currentBlockHeight
   }
 
-  def init(nodeParamsA: NodeParams = TestConstants.Alice.nodeParams, nodeParamsB: NodeParams = TestConstants.Bob.nodeParams, wallet: OnChainWallet = new DummyOnChainWallet(), tags: Set[String] = Set.empty): SetupFixture = {
+  def init(nodeParamsA: NodeParams = TestConstants.Alice.nodeParams, nodeParamsB: NodeParams = TestConstants.Bob.nodeParams, wallet_opt: Option[OnChainWallet] = None, tags: Set[String] = Set.empty): SetupFixture = {
     val aliceOrigin = TestProbe()
     val alice2bob = TestProbe()
     val bob2alice = TestProbe()
@@ -136,6 +135,10 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
       .modify(_.channelConf.dustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceBobAlice))(5000 sat)
       .modify(_.channelConf.maxRemoteDustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceAliceBob))(10000 sat)
       .modify(_.channelConf.maxRemoteDustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceBobAlice))(10000 sat)
+    val wallet = wallet_opt match {
+      case Some(wallet) => wallet
+      case None => if (tags.contains(ChannelStateTestsTags.DualFunding)) new SingleKeyOnChainWallet() else new DummyOnChainWallet()
+    }
     val alice: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(finalNodeParamsA, wallet, finalNodeParamsB.nodeId, alice2blockchain.ref, alice2relayer.ref, FakeTxPublisherFactory(alice2blockchain), origin_opt = Some(aliceOrigin.ref)), alicePeer.ref)
     val bob: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(finalNodeParamsB, wallet, finalNodeParamsA.nodeId, bob2blockchain.ref, bob2relayer.ref, FakeTxPublisherFactory(bob2blockchain)), bobPeer.ref)
     SetupFixture(alice, bob, aliceOrigin, alice2bob, bob2alice, alice2blockchain, bob2blockchain, router, alice2relayer, bob2relayer, channelUpdateListener, wallet, alicePeer, bobPeer)
@@ -175,28 +178,29 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
       .modify(_.maxHtlcValueInFlightMsat).setToIf(tags.contains(ChannelStateTestsTags.AliceLowMaxHtlcValueInFlight))(UInt64(150000000))
       .modify(_.dustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceAliceBob))(5000 sat)
       .modify(_.dustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceBobAlice))(1000 sat)
+      .modify(_.requestedChannelReserve_opt).setToIf(tags.contains(ChannelStateTestsTags.DualFunding))(None)
     val bobParams = Bob.channelParams
       .modify(_.initFeatures).setTo(bobInitFeatures)
       .modify(_.walletStaticPaymentBasepoint).setToIf(channelType.paysDirectlyToWallet)(Some(Helpers.getWalletPaymentBasepoint(wallet)))
       .modify(_.maxHtlcValueInFlightMsat).setToIf(tags.contains(ChannelStateTestsTags.NoMaxHtlcValueInFlight))(UInt64.MaxValue)
       .modify(_.dustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceAliceBob))(1000 sat)
       .modify(_.dustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceBobAlice))(5000 sat)
+      .modify(_.requestedChannelReserve_opt).setToIf(tags.contains(ChannelStateTestsTags.DualFunding))(None)
 
     (aliceParams, bobParams, channelType)
   }
 
   def reachNormal(setup: SetupFixture, tags: Set[String] = Set.empty): Unit = {
-
     import setup._
 
     val channelConfig = ChannelConfig.standard
     val (aliceParams, bobParams, channelType) = computeFeatures(setup, tags)
     val channelFlags = ChannelFlags(announceChannel = tags.contains(ChannelStateTestsTags.ChannelsPublic))
     val commitTxFeerate = if (tags.contains(ChannelStateTestsTags.AnchorOutputs) || tags.contains(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) TestConstants.anchorOutputsFeeratePerKw else TestConstants.feeratePerKw
-    val fundingAmount = TestConstants.fundingSatoshis
-    val pushMsat = if (tags.contains(ChannelStateTestsTags.NoPushMsat)) 0 msat else TestConstants.pushMsat
-    val nonInitiatorFundingAmount = if (tags.contains(ChannelStateTestsTags.DualFundingContribution)) Some(TestConstants.nonInitiatorFundingSatoshis) else None
     val dualFunded = tags.contains(ChannelStateTestsTags.DualFunding)
+    val fundingAmount = TestConstants.fundingSatoshis
+    val pushMsat = if (tags.contains(ChannelStateTestsTags.NoPushMsat) || dualFunded) 0 msat else TestConstants.pushMsat
+    val nonInitiatorFundingAmount = if (dualFunded) Some(TestConstants.nonInitiatorFundingSatoshis) else None
 
     val aliceInit = Init(aliceParams.initFeatures)
     val bobInit = Init(bobParams.initFeatures)

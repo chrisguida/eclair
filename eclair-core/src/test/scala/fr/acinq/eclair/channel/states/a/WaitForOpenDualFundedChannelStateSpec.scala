@@ -23,7 +23,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.wire.protocol.{AcceptDualFundedChannel, Error, Init, OpenDualFundedChannel}
-import fr.acinq.eclair.{Features, TestConstants, TestKitBaseClass, randomBytes32}
+import fr.acinq.eclair.{TestConstants, TestKitBaseClass, randomBytes32}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 
@@ -34,7 +34,7 @@ class WaitForOpenDualFundedChannelStateSpec extends TestKitBaseClass with Fixtur
   case class FixtureParam(alice: TestFSMRef[ChannelState, ChannelData, Channel], bob: TestFSMRef[ChannelState, ChannelData, Channel], alice2bob: TestProbe, bob2alice: TestProbe, eventListener: TestProbe)
 
   override def withFixture(test: OneArgTest): Outcome = {
-    val setup = init()
+    val setup = init(tags = test.tags)
     import setup._
 
     val listener = TestProbe()
@@ -76,11 +76,7 @@ class WaitForOpenDualFundedChannelStateSpec extends TestKitBaseClass with Fixtur
     val channelIdAssigned = eventListener.expectMsgType[ChannelIdAssigned]
     assert(channelIdAssigned.temporaryChannelId === ByteVector32.Zeroes)
     assert(channelIdAssigned.channelId === Helpers.computeChannelId(open, accept))
-
-    awaitCond(bob.stateName == WAIT_FOR_DUAL_FUNDING_INTERNAL)
-    val channelFeatures = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_INTERNAL].channelFeatures
-    assert(channelFeatures.channelType === ChannelTypes.AnchorOutputsZeroFeeHtlcTx)
-    assert(channelFeatures.hasFeature(Features.DualFunding))
+    awaitCond(bob.stateName == WAIT_FOR_DUAL_FUNDING_CREATED)
   }
 
   test("recv OpenDualFundedChannel (invalid chain)", Tag(ChannelStateTestsTags.DualFunding)) { f =>

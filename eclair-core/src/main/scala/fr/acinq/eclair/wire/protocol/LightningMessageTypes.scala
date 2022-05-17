@@ -23,7 +23,7 @@ import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Satoshi, Script
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.{ChannelFlags, ChannelType}
 import fr.acinq.eclair.payment.relay.Relayer
-import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, Feature, Features, InitFeature, MilliSatoshi, ShortChannelId, TimestampSecond, UInt64}
+import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, Feature, Features, InitFeature, MilliSatoshi, ShortChannelId, TimestampSecond, UInt64, isAsciiPrintable}
 import scodec.bits.ByteVector
 
 import java.net.{Inet4Address, Inet6Address, InetAddress}
@@ -39,6 +39,7 @@ sealed trait LightningMessage extends Serializable
 sealed trait SetupMessage extends LightningMessage
 sealed trait ChannelMessage extends LightningMessage
 sealed trait InteractiveTxMessage extends LightningMessage
+sealed trait InteractiveTxConstructionMessage extends InteractiveTxMessage // <- not in the spec
 sealed trait HtlcMessage extends LightningMessage
 sealed trait RoutingMessage extends LightningMessage
 sealed trait AnnouncementMessage extends RoutingMessage // <- not in the spec
@@ -46,6 +47,7 @@ sealed trait HasTimestamp extends LightningMessage { def timestamp: TimestampSec
 sealed trait HasTemporaryChannelId extends LightningMessage { def temporaryChannelId: ByteVector32 } // <- not in the spec
 sealed trait HasChannelId extends LightningMessage { def channelId: ByteVector32 } // <- not in the spec
 sealed trait HasChainHash extends LightningMessage { def chainHash: ByteVector32 } // <- not in the spec
+sealed trait HasSerialId extends LightningMessage { def serialId: UInt64 } // <- not in the spec
 sealed trait UpdateMessage extends HtlcMessage // <- not in the spec
 sealed trait HtlcSettlementMessage extends UpdateMessage { def id: Long } // <- not in the spec
 // @formatter:on
@@ -58,7 +60,7 @@ case class Init(features: Features[InitFeature], tlvStream: TlvStream[InitTlv] =
 case class Warning(channelId: ByteVector32, data: ByteVector, tlvStream: TlvStream[WarningTlv] = TlvStream.empty) extends SetupMessage with HasChannelId {
   // @formatter:off
   val isGlobal: Boolean = channelId == ByteVector32.Zeroes
-  def toAscii: String = if (fr.acinq.eclair.isAsciiPrintable(data)) new String(data.toArray, StandardCharsets.US_ASCII) else "n/a"
+  def toAscii: String = if (isAsciiPrintable(data)) new String(data.toArray, StandardCharsets.US_ASCII) else "n/a"
   // @formatter:on
 }
 
@@ -70,7 +72,7 @@ object Warning {
 }
 
 case class Error(channelId: ByteVector32, data: ByteVector, tlvStream: TlvStream[ErrorTlv] = TlvStream.empty) extends SetupMessage with HasChannelId {
-  def toAscii: String = if (fr.acinq.eclair.isAsciiPrintable(data)) new String(data.toArray, StandardCharsets.US_ASCII) else "n/a"
+  def toAscii: String = if (isAsciiPrintable(data)) new String(data.toArray, StandardCharsets.US_ASCII) else "n/a"
 }
 
 object Error {
@@ -86,24 +88,24 @@ case class TxAddInput(channelId: ByteVector32,
                       previousTx: Transaction,
                       previousTxOutput: Long,
                       sequence: Long,
-                      tlvStream: TlvStream[TxAddInputTlv] = TlvStream.empty) extends InteractiveTxMessage with HasChannelId
+                      tlvStream: TlvStream[TxAddInputTlv] = TlvStream.empty) extends InteractiveTxConstructionMessage with HasChannelId with HasSerialId
 
 case class TxAddOutput(channelId: ByteVector32,
                        serialId: UInt64,
                        amount: Satoshi,
                        pubkeyScript: ByteVector,
-                       tlvStream: TlvStream[TxAddOutputTlv] = TlvStream.empty) extends InteractiveTxMessage with HasChannelId
+                       tlvStream: TlvStream[TxAddOutputTlv] = TlvStream.empty) extends InteractiveTxConstructionMessage with HasChannelId with HasSerialId
 
 case class TxRemoveInput(channelId: ByteVector32,
                          serialId: UInt64,
-                         tlvStream: TlvStream[TxRemoveInputTlv] = TlvStream.empty) extends InteractiveTxMessage with HasChannelId
+                         tlvStream: TlvStream[TxRemoveInputTlv] = TlvStream.empty) extends InteractiveTxConstructionMessage with HasChannelId with HasSerialId
 
 case class TxRemoveOutput(channelId: ByteVector32,
                           serialId: UInt64,
-                          tlvStream: TlvStream[TxRemoveOutputTlv] = TlvStream.empty) extends InteractiveTxMessage with HasChannelId
+                          tlvStream: TlvStream[TxRemoveOutputTlv] = TlvStream.empty) extends InteractiveTxConstructionMessage with HasChannelId with HasSerialId
 
 case class TxComplete(channelId: ByteVector32,
-                      tlvStream: TlvStream[TxCompleteTlv] = TlvStream.empty) extends InteractiveTxMessage with HasChannelId
+                      tlvStream: TlvStream[TxCompleteTlv] = TlvStream.empty) extends InteractiveTxConstructionMessage with HasChannelId
 
 case class TxSignatures(channelId: ByteVector32,
                         txId: ByteVector32,
@@ -113,14 +115,34 @@ case class TxSignatures(channelId: ByteVector32,
 case class TxInitRbf(channelId: ByteVector32,
                      lockTime: Long,
                      feerate: FeeratePerKw,
-                     tlvStream: TlvStream[TxInitRbfTlv] = TlvStream.empty) extends InteractiveTxMessage with HasChannelId
+                     tlvStream: TlvStream[TxInitRbfTlv] = TlvStream.empty) extends InteractiveTxMessage with HasChannelId {
+  val fundingContribution_opt: Option[Satoshi] = tlvStream.get[TxRbfTlv.SharedOutputContributionTlv].map(_.amount)
+}
+
+object TxInitRbf {
+  def apply(channelId: ByteVector32, lockTime: Long, feerate: FeeratePerKw, fundingContribution: Satoshi): TxInitRbf =
+    TxInitRbf(channelId, lockTime, feerate, TlvStream[TxInitRbfTlv](TxRbfTlv.SharedOutputContributionTlv(fundingContribution)))
+}
 
 case class TxAckRbf(channelId: ByteVector32,
-                    tlvStream: TlvStream[TxAckRbfTlv] = TlvStream.empty) extends InteractiveTxMessage with HasChannelId
+                    tlvStream: TlvStream[TxAckRbfTlv] = TlvStream.empty) extends InteractiveTxMessage with HasChannelId {
+  val fundingContribution_opt: Option[Satoshi] = tlvStream.get[TxRbfTlv.SharedOutputContributionTlv].map(_.amount)
+}
+
+object TxAckRbf {
+  def apply(channelId: ByteVector32, fundingContribution: Satoshi): TxAckRbf =
+    TxAckRbf(channelId, TlvStream[TxAckRbfTlv](TxRbfTlv.SharedOutputContributionTlv(fundingContribution)))
+}
 
 case class TxAbort(channelId: ByteVector32,
                    data: ByteVector,
-                   tlvStream: TlvStream[TxAbortTlv] = TlvStream.empty) extends InteractiveTxMessage with HasChannelId
+                   tlvStream: TlvStream[TxAbortTlv] = TlvStream.empty) extends InteractiveTxMessage with HasChannelId {
+  def toAscii: String = if (isAsciiPrintable(data)) new String(data.toArray, StandardCharsets.US_ASCII) else "n/a"
+}
+
+object TxAbort {
+  def apply(channelId: ByteVector32, msg: String): TxAbort = TxAbort(channelId, ByteVector.view(msg.getBytes(Charsets.US_ASCII)))
+}
 
 case class ChannelReestablish(channelId: ByteVector32,
                               nextLocalCommitmentNumber: Long,

@@ -20,13 +20,12 @@ import akka.actor.Status
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong}
 import fr.acinq.eclair.TestConstants.Alice
-import fr.acinq.eclair.blockchain.NoOpOnChainWallet
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fsm.Channel.TickChannelOpenTimeout
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.wire.protocol.{AcceptDualFundedChannel, Error, Init, OpenDualFundedChannel}
-import fr.acinq.eclair.{Features, TestConstants, TestKitBaseClass}
+import fr.acinq.eclair.{TestConstants, TestKitBaseClass}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 
@@ -37,14 +36,14 @@ class WaitForAcceptDualFundedChannelStateSpec extends TestKitBaseClass with Fixt
   case class FixtureParam(alice: TestFSMRef[ChannelState, ChannelData, Channel], bob: TestFSMRef[ChannelState, ChannelData, Channel], open: OpenDualFundedChannel, aliceOrigin: TestProbe, alice2bob: TestProbe, bob2alice: TestProbe)
 
   override def withFixture(test: OneArgTest): Outcome = {
-    val setup = init(wallet = new NoOpOnChainWallet())
+    val setup = init(tags = test.tags)
     import setup._
 
     val channelConfig = ChannelConfig.standard
     val (aliceParams, bobParams, channelType) = computeFeatures(setup, test.tags)
     val aliceInit = Init(aliceParams.initFeatures)
     val bobInit = Init(bobParams.initFeatures)
-    val nonInitiatorContribution = if (test.tags.contains(ChannelStateTestsTags.DualFundingContribution)) Some(TestConstants.nonInitiatorFundingSatoshis) else None
+    val nonInitiatorContribution = if (test.tags.contains("dual_funding_contribution")) Some(TestConstants.nonInitiatorFundingSatoshis) else None
     within(30 seconds) {
       alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, TestConstants.fundingSatoshis, dualFunded = true, TestConstants.anchorOutputsFeeratePerKw, TestConstants.feeratePerKw, None, aliceParams, alice2bob.ref, bobInit, ChannelFlags.Private, channelConfig, channelType)
       bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, nonInitiatorContribution, dualFunded = true, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
@@ -68,14 +67,11 @@ class WaitForAcceptDualFundedChannelStateSpec extends TestKitBaseClass with Fixt
     bob2alice.forward(alice, accept)
     assert(listener.expectMsgType[ChannelIdAssigned].channelId === Helpers.computeChannelId(open, accept))
 
-    awaitCond(alice.stateName == WAIT_FOR_DUAL_FUNDING_INTERNAL)
-    val channelFeatures = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_INTERNAL].channelFeatures
-    assert(channelFeatures.channelType === ChannelTypes.AnchorOutputsZeroFeeHtlcTx)
-    assert(channelFeatures.hasFeature(Features.DualFunding))
+    awaitCond(alice.stateName == WAIT_FOR_DUAL_FUNDING_CREATED)
     aliceOrigin.expectNoMessage()
   }
 
-  test("recv AcceptDualFundedChannel (with non-initiator contribution)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.DualFundingContribution)) { f =>
+  test("recv AcceptDualFundedChannel (with non-initiator contribution)", Tag(ChannelStateTestsTags.DualFunding), Tag("dual_funding_contribution")) { f =>
     import f._
 
     val accept = bob2alice.expectMsgType[AcceptDualFundedChannel]
@@ -83,7 +79,7 @@ class WaitForAcceptDualFundedChannelStateSpec extends TestKitBaseClass with Fixt
     assert(accept.channelType_opt === Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx))
     assert(accept.fundingAmount === TestConstants.nonInitiatorFundingSatoshis)
     bob2alice.forward(alice, accept)
-    awaitCond(alice.stateName == WAIT_FOR_DUAL_FUNDING_INTERNAL)
+    awaitCond(alice.stateName == WAIT_FOR_DUAL_FUNDING_CREATED)
   }
 
   test("recv AcceptDualFundedChannel (invalid max accepted htlcs)", Tag(ChannelStateTestsTags.DualFunding)) { f =>
