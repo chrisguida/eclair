@@ -1361,9 +1361,10 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
       goto(WAIT_FOR_FUNDING_CONFIRMED)
 
     case Event(_: ChannelReestablish, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
+      log.debug("re-sending tx_signatures")
       val minDepth = Helpers.minDepthForFunding(nodeParams.channelConf, d.commitments.commitInput.txOut.amount)
       (d.commitments +: d.previousFundingTxs.map(_.commitments)).foreach(commitments => blockchain ! WatchFundingConfirmed(self, commitments.commitInput.outPoint.txid, minDepth))
-      goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED)
+      goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED) sending d.fundingTx.localSigs
 
     case Event(_: ChannelReestablish, d: DATA_WAIT_FOR_FUNDING_LOCKED) =>
       log.debug("re-sending fundingLocked")

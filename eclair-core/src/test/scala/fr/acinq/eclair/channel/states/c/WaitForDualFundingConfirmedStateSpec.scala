@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.channel.states.c
 
+import akka.actor.Status
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchFundingConfirmed, WatchFundingConfirmedTriggered, WatchFundingSpent}
@@ -102,6 +103,44 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     }
   }
 
+  test("recv TxSignatures (duplicate)", Tag(ChannelStateTestsTags.DualFunding)) { f =>
+    import f._
+
+    val aliceSigs = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].fundingTx.localSigs
+    val bobSigs = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].fundingTx.localSigs
+    alice2bob.forward(bob, aliceSigs)
+    bob2alice.forward(alice, bobSigs)
+    alice2bob.expectNoMessage(100 millis)
+    bob2alice.expectNoMessage(100 millis)
+    assert(alice.stateName === WAIT_FOR_DUAL_FUNDING_CONFIRMED)
+    assert(bob.stateName === WAIT_FOR_DUAL_FUNDING_CONFIRMED)
+  }
+
+  test("re-transmit TxSignatures on reconnection", Tag(ChannelStateTestsTags.DualFunding)) { f =>
+    import f._
+
+    val aliceInit = Init(alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].commitments.localParams.initFeatures)
+    val bobInit = Init(bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].commitments.localParams.initFeatures)
+    val aliceSigs = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].fundingTx.localSigs
+    val bobSigs = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].fundingTx.localSigs
+
+    alice ! INPUT_DISCONNECTED
+    awaitCond(alice.stateName == OFFLINE)
+    bob ! INPUT_DISCONNECTED
+    awaitCond(bob.stateName == OFFLINE)
+    alice ! INPUT_RECONNECTED(alice2bob.ref, aliceInit, bobInit)
+    bob ! INPUT_RECONNECTED(bob2alice.ref, bobInit, aliceInit)
+    alice2bob.expectMsgType[ChannelReestablish]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[ChannelReestablish]
+    bob2alice.forward(alice)
+    alice2bob.expectMsg(aliceSigs)
+    bob2alice.expectMsg(bobSigs)
+
+    awaitCond(alice.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
+    awaitCond(bob.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
+  }
+
   test("recv WatchFundingConfirmedTriggered", Tag(ChannelStateTestsTags.DualFunding)) { f =>
     import f._
     val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].fundingTx.asInstanceOf[FullySignedSharedTransaction].signedTx
@@ -110,6 +149,106 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     assert(alice2blockchain.expectMsgType[WatchFundingSpent].txId === fundingTx.txid)
     alice2bob.expectMsgType[FundingLocked]
     awaitCond(alice.stateName === WAIT_FOR_DUAL_FUNDING_LOCKED)
+  }
+
+  test("recv WatchFundingConfirmedTriggered (rbf in progress)", Tag(ChannelStateTestsTags.DualFunding)) { f =>
+    import f._
+
+    val probe = TestProbe()
+    val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].fundingTx.asInstanceOf[FullySignedSharedTransaction].signedTx
+    alice ! CMD_BUMP_FUNDING_FEE(probe.ref, TestConstants.feeratePerKw * 1.1, 0)
+    alice2bob.expectMsgType[TxInitRbf]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[TxAckRbf]
+
+    alice ! WatchFundingConfirmedTriggered(BlockHeight(42000), 42, fundingTx)
+    assert(listener.expectMsgType[TransactionConfirmed].tx === fundingTx)
+    assert(alice2blockchain.expectMsgType[WatchFundingSpent].txId === fundingTx.txid)
+    alice2bob.expectMsgType[TxAbort]
+    alice2bob.expectMsgType[FundingLocked]
+    probe.expectMsg(Status.Failure(InvalidRbfTxConfirmed(channelId(alice))))
+    awaitCond(alice.stateName === WAIT_FOR_DUAL_FUNDING_LOCKED)
+  }
+
+  test("rbf funding attempt", Tag(ChannelStateTestsTags.DualFunding)) { f =>
+    import f._
+
+    val probe = TestProbe()
+    val fundingTx1 = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].fundingTx.asInstanceOf[FullySignedSharedTransaction]
+    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].previousFundingTxs.isEmpty)
+    alice ! CMD_BUMP_FUNDING_FEE(probe.ref, TestConstants.feeratePerKw * 1.1, 0)
+    assert(alice2bob.expectMsgType[TxInitRbf].fundingContribution_opt === Some(TestConstants.fundingSatoshis))
+    alice2bob.forward(bob)
+    assert(bob2alice.expectMsgType[TxAckRbf].fundingContribution_opt === Some(TestConstants.nonInitiatorFundingSatoshis))
+    bob2alice.forward(alice)
+    probe.expectMsgType[RES_SUCCESS[CMD_BUMP_FUNDING_FEE]]
+
+    // Alice and Bob build a new version of the funding transaction.
+    alice2bob.expectMsgType[TxAddInput]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[TxAddInput]
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[TxAddInput]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[TxAddInput]
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[TxAddOutput]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[TxAddOutput]
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[TxAddOutput]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[TxComplete]
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[TxComplete]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[CommitSig]
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[CommitSig]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[TxSignatures]
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[TxSignatures]
+    alice2bob.forward(bob)
+
+    val fundingTx2 = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].fundingTx.asInstanceOf[FullySignedSharedTransaction]
+    assert(fundingTx1.signedTx.txid != fundingTx2.signedTx.txid)
+    assert(fundingTx1.feerate < fundingTx2.feerate)
+    // The new transaction double-spends previous inputs.
+    fundingTx1.signedTx.txIn.map(_.outPoint).foreach(o => assert(fundingTx2.signedTx.txIn.exists(_.outPoint == o)))
+    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].previousFundingTxs.length === 1)
+    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].previousFundingTxs.head.fundingTx === fundingTx1)
+  }
+
+  test("rbf funding attempt failure", Tag(ChannelStateTestsTags.DualFunding)) { f =>
+    import f._
+
+    val probe = TestProbe()
+    val fundingTxAlice = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].fundingTx.asInstanceOf[FullySignedSharedTransaction]
+    val fundingTxBob = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].fundingTx.asInstanceOf[FullySignedSharedTransaction]
+    alice ! CMD_BUMP_FUNDING_FEE(probe.ref, TestConstants.feeratePerKw * 1.1, 0)
+    assert(alice2bob.expectMsgType[TxInitRbf].fundingContribution_opt === Some(TestConstants.fundingSatoshis))
+    alice2bob.forward(bob)
+    assert(bob2alice.expectMsgType[TxAckRbf].fundingContribution_opt === Some(TestConstants.nonInitiatorFundingSatoshis))
+    bob2alice.forward(alice)
+
+    // Alice and Bob build a new version of the funding transaction.
+    alice2bob.expectMsgType[TxAddInput]
+    alice2bob.forward(bob)
+    val bobInput = bob2alice.expectMsgType[TxAddInput]
+    bob2alice.forward(alice, bobInput.copy(previousTxOutput = 42))
+    alice2bob.expectMsgType[TxAbort]
+    alice2bob.forward(bob)
+    bob2alice.expectNoMessage(100 millis)
+    alice2bob.expectNoMessage(100 millis)
+
+    // Alice and Bob clear RBF data from their state.
+    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].rbfAttempt === None)
+    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].fundingTx === fundingTxAlice)
+    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].previousFundingTxs.isEmpty)
+    assert(bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].rbfAttempt === None)
+    assert(bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].fundingTx === fundingTxBob)
+    assert(bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].previousFundingTxs.isEmpty)
   }
 
   test("recv CurrentBlockCount (funding in progress)", Tag(ChannelStateTestsTags.DualFunding)) { f =>

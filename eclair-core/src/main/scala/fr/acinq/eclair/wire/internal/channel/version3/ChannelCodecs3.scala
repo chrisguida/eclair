@@ -382,7 +382,7 @@ private[channel] object ChannelCodecs3 {
         ("previousFundingTxs" | seqOfN(uint16, dualFundingTxCodec)) ::
         ("waitingSince" | blockHeight) ::
         ("lastChecked" | blockHeight) ::
-        ("rbfAttempt" | provide(Option.empty[typed.ActorRef[InteractiveTxBuilder.Command]])) ::
+        ("rbfAttempt" | provide(Option.empty[Either[CMD_BUMP_FUNDING_FEE, typed.ActorRef[InteractiveTxBuilder.Command]]])) ::
         ("deferred" | optional(bool8, lengthDelimited(fundingLockedCodec)))).as[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED]
 
     val DATA_WAIT_FOR_DUAL_FUNDING_LOCKED_Codec: Codec[DATA_WAIT_FOR_DUAL_FUNDING_LOCKED] = (

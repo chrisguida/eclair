@@ -164,6 +164,7 @@ object InteractiveTxBuilder {
   // @formatter:off
   sealed trait SignedSharedTransaction {
     def tx: SharedTransaction
+    def localSigs: TxSignatures
   }
   case class PartiallySignedSharedTransaction(tx: SharedTransaction, localSigs: TxSignatures) extends SignedSharedTransaction
   case class FullySignedSharedTransaction(tx: SharedTransaction, localSigs: TxSignatures, remoteSigs: TxSignatures) extends SignedSharedTransaction {
