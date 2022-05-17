@@ -16,16 +16,23 @@
 
 package fr.acinq.eclair.channel.fsm
 
+import akka.actor.ActorRef
 import akka.actor.typed.scaladsl.adapter.{ClassicActorContextOps, actorRefAdapter}
-import fr.acinq.bitcoin.scalacompat.{SatoshiLong, Script}
-import fr.acinq.eclair.Features
+import fr.acinq.bitcoin.ScriptFlags
+import fr.acinq.bitcoin.scalacompat.{SatoshiLong, Script, Transaction}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
+import fr.acinq.eclair.channel.Helpers.getRelayFees
 import fr.acinq.eclair.channel.InteractiveTxBuilder.{FullySignedSharedTransaction, InteractiveTxParams, PartiallySignedSharedTransaction}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel._
 import fr.acinq.eclair.channel.publish.TxPublisher.SetChannelId
+import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.protocol._
+import fr.acinq.eclair.{Features, ShortChannelId, ToMilliSatoshiConversion}
+
+import scala.concurrent.duration.DurationInt
+import scala.util.{Failure, Success, Try}
 
 /**
  * Created by t-bast on 19/04/2022.
@@ -268,12 +275,12 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
       case InteractiveTxBuilder.Succeeded(fundingParams, fundingTx, commitments) =>
         val fundingMinDepth = Helpers.minDepthForFunding(nodeParams.channelConf, fundingParams.fundingAmount)
         blockchain ! WatchFundingConfirmed(self, commitments.commitInput.outPoint.txid, fundingMinDepth)
-        val nextData = DATA_WAIT_FOR_DUAL_FUNDING_PLACEHOLDER(commitments, fundingTx, fundingParams, Nil, nodeParams.currentBlockHeight, nodeParams.currentBlockHeight, None, None)
+        val nextData = DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(commitments, fundingTx, fundingParams, Nil, nodeParams.currentBlockHeight, nodeParams.currentBlockHeight, None, None)
         fundingTx match {
           case fundingTx: PartiallySignedSharedTransaction =>
-            goto(WAIT_FOR_DUAL_FUNDING_PLACEHOLDER) using nextData sending fundingTx.localSigs
+            goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED) using nextData storing() sending fundingTx.localSigs
           case fundingTx: FullySignedSharedTransaction =>
-            goto(WAIT_FOR_DUAL_FUNDING_PLACEHOLDER) using nextData sending fundingTx.localSigs calling publishFundingTx(nextData)
+            goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED) using nextData storing() sending fundingTx.localSigs calling publishFundingTx(nextData)
         }
       case f: InteractiveTxBuilder.Failed =>
         channelOpenReplyToUser(Left(LocalError(f.cause)))
@@ -301,8 +308,122 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
       goto(CLOSED)
   })
 
-  when(WAIT_FOR_DUAL_FUNDING_PLACEHOLDER)(handleExceptions {
-    case Event(_, _) => ???
+  when(WAIT_FOR_DUAL_FUNDING_CONFIRMED)(handleExceptions {
+    case Event(txSigs: TxSignatures, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
+      d.fundingTx match {
+        case fundingTx: PartiallySignedSharedTransaction => InteractiveTxBuilder.addRemoteSigs(d.fundingParams, fundingTx, txSigs) match {
+          case Left(cause) =>
+            log.warning("received invalid tx_signatures: {}", cause.getMessage)
+            // The funding transaction may still confirm (since our peer should be able to generate valid signatures),
+            // so we cannot close the channel yet.
+            stay() sending Error(d.channelId, InvalidFundingSignature(d.channelId, Some(d.fundingTx.tx.buildUnsignedTx())).getMessage)
+          case Right(fundingTx) =>
+            log.info("publishing funding tx for channelId={} fundingTxId={}", d.channelId, fundingTx.signedTx.txid)
+            val nextData = d.copy(fundingTx = fundingTx)
+            stay() using nextData storing() calling publishFundingTx(nextData)
+        }
+        case _: FullySignedSharedTransaction =>
+          log.warning("received duplicate tx_signatures")
+          stay()
+      }
+
+    case Event(_: TxInitRbf, _: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
+      log.info("rbf not supported yet")
+      stay()
+
+    case Event(_: TxAckRbf, _: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
+      log.info("rbf not supported yet")
+      stay()
+
+    case Event(msg: InteractiveTxConstructionMessage, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
+      stay() sending Warning(d.channelId, UnexpectedInteractiveTxMessage(d.channelId, msg).getMessage)
+
+    case Event(msg: TxAbort, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
+      stay() sending Warning(d.channelId, UnexpectedInteractiveTxMessage(d.channelId, msg).getMessage)
+
+    case Event(WatchFundingConfirmedTriggered(blockHeight, txIndex, confirmedTx), d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
+      // We find which funding transaction got confirmed.
+      val allFundingTxs = DualFundingTx(d.fundingTx, d.commitments) +: d.previousFundingTxs
+      allFundingTxs.find(_.commitments.commitInput.outPoint.txid == confirmedTx.txid) match {
+        case Some(DualFundingTx(_, commitments)) =>
+          Try(Transaction.correctlySpends(commitments.fullySignedLocalCommitTx(keyManager).tx, Seq(confirmedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)) match {
+            case Success(_) =>
+              log.info(s"channelId=${commitments.channelId} was confirmed at blockHeight=$blockHeight txIndex=$txIndex with funding txid=${commitments.commitInput.outPoint.txid}")
+              val commitTxs = Set(commitments.localCommit.commitTxAndRemoteSig.commitTx.tx.txid, commitments.remoteCommit.txid)
+              blockchain ! WatchFundingSpent(self, commitments.commitInput.outPoint.txid, commitments.commitInput.outPoint.index.toInt, commitTxs)
+              context.system.eventStream.publish(TransactionConfirmed(commitments.channelId, remoteNodeId, confirmedTx))
+              val channelKeyPath = keyManager.keyPath(commitments.localParams, commitments.channelConfig)
+              val nextPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 1)
+              val fundingLocked = FundingLocked(commitments.channelId, nextPerCommitmentPoint)
+              d.deferred.foreach(self ! _)
+              val shortChannelId = ShortChannelId(blockHeight, txIndex, commitments.commitInput.outPoint.index.toInt)
+              val otherFundingTxs = allFundingTxs.filter(_.commitments.commitInput.outPoint.txid != confirmedTx.txid)
+              goto(WAIT_FOR_DUAL_FUNDING_LOCKED) using DATA_WAIT_FOR_DUAL_FUNDING_LOCKED(commitments, shortChannelId, otherFundingTxs, fundingLocked) storing() sending fundingLocked
+            case Failure(t) =>
+              log.error(t, s"rejecting channel with invalid funding tx: ${confirmedTx.bin}")
+              allFundingTxs.foreach(f => wallet.rollback(f.fundingTx.tx.buildUnsignedTx()))
+              goto(CLOSED)
+          }
+        case None =>
+          log.error(s"rejecting channel with invalid funding tx that doesn't match any of our funding txs: ${confirmedTx.bin}")
+          allFundingTxs.foreach(f => wallet.rollback(f.fundingTx.tx.buildUnsignedTx()))
+          goto(CLOSED)
+      }
+
+    case Event(ProcessCurrentBlockHeight(c), d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) => handleNewBlockDualFundingUnconfirmed(c, d)
+
+    case Event(e: BITCOIN_FUNDING_DOUBLE_SPENT, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) => handleDualFundingDoubleSpent(e, d)
+
+    case Event(msg: FundingLocked, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
+      log.info("received their funding_locked, deferring message")
+      stay() using d.copy(deferred = Some(msg)) // no need to store, they will re-send if we get disconnected
+
+    case Event(remoteAnnSigs: AnnouncementSignatures, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) if d.commitments.announceChannel =>
+      log.debug("received remote announcement signatures, delaying")
+      // we may receive their announcement sigs before our watcher notifies us that the channel has reached min_conf (especially during testing when blocks are generated in bulk)
+      // note: no need to persist their message, in case of disconnection they will resend it
+      context.system.scheduler.scheduleOnce(2 seconds, self, remoteAnnSigs)
+      stay()
+
+    case Event(c: CMD_FORCECLOSE, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
+      // We can't easily force-close until we know which funding transaction confirms.
+      // A better option would be to double-spend the funding transaction(s).
+      log.warning("cannot force-close while dual-funded transactions are unconfirmed")
+      val replyTo = if (c.replyTo == ActorRef.noSender) sender() else c.replyTo
+      replyTo ! RES_FAILURE(c, CommandUnavailableInThisState(d.channelId, "force-close", stateName))
+      stay()
+
+    case Event(e: Error, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) => handleRemoteError(e, d)
+  })
+
+  when(WAIT_FOR_DUAL_FUNDING_LOCKED)(handleExceptions {
+    case Event(FundingLocked(_, nextPerCommitmentPoint, _), d: DATA_WAIT_FOR_DUAL_FUNDING_LOCKED) =>
+      // used to get the final shortChannelId, used in announcements (if minDepth >= ANNOUNCEMENTS_MINCONF this event will fire instantly)
+      blockchain ! WatchFundingDeeplyBuried(self, d.commitments.commitInput.outPoint.txid, ANNOUNCEMENTS_MINCONF)
+      context.system.eventStream.publish(ShortChannelIdAssigned(self, d.commitments.channelId, d.shortChannelId, None))
+      // we create a channel_update early so that we can use it to send payments through this channel, but it won't be propagated to other nodes since the channel is not yet announced
+      val fees = getRelayFees(nodeParams, remoteNodeId, d.commitments)
+      val initialChannelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, d.shortChannelId, nodeParams.channelConf.expiryDelta, d.commitments.remoteParams.htlcMinimum, fees.feeBase, fees.feeProportionalMillionths, d.commitments.capacity.toMilliSatoshi, enable = Helpers.aboveReserve(d.commitments))
+      // we need to periodically re-send channel updates, otherwise channel will be considered stale and get pruned by network
+      context.system.scheduler.scheduleWithFixedDelay(initialDelay = REFRESH_CHANNEL_UPDATE_INTERVAL, delay = REFRESH_CHANNEL_UPDATE_INTERVAL, receiver = self, message = BroadcastChannelUpdate(PeriodicRefresh))
+      goto(NORMAL) using DATA_NORMAL(d.commitments.copy(remoteNextCommitInfo = Right(nextPerCommitmentPoint)), d.shortChannelId, buried = false, None, initialChannelUpdate, None, None, None) storing()
+
+    case Event(_: TxInitRbf, d: DATA_WAIT_FOR_DUAL_FUNDING_LOCKED) =>
+      // Our peer may not have received the funding transaction confirmation.
+      stay() sending TxAbort(d.channelId, InvalidRbfTxConfirmed(d.channelId).getMessage)
+
+    case Event(remoteAnnSigs: AnnouncementSignatures, d: DATA_WAIT_FOR_DUAL_FUNDING_LOCKED) if d.commitments.announceChannel =>
+      log.debug("received remote announcement signatures, delaying")
+      // we may receive their announcement sigs before our watcher notifies us that the channel has reached min_conf (especially during testing when blocks are generated in bulk)
+      // note: no need to persist their message, in case of disconnection they will resend it
+      context.system.scheduler.scheduleOnce(2 seconds, self, remoteAnnSigs)
+      stay()
+
+    case Event(WatchFundingSpentTriggered(tx), d: DATA_WAIT_FOR_DUAL_FUNDING_LOCKED) if tx.txid == d.commitments.remoteCommit.txid => handleRemoteSpentCurrent(tx, d)
+
+    case Event(WatchFundingSpentTriggered(tx), d: DATA_WAIT_FOR_DUAL_FUNDING_LOCKED) => handleInformationLeak(tx, d)
+
+    case Event(e: Error, d: DATA_WAIT_FOR_DUAL_FUNDING_LOCKED) => handleRemoteError(e, d)
   })
 
 }

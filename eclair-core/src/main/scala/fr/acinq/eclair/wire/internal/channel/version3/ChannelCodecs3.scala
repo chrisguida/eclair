@@ -16,8 +16,10 @@
 
 package fr.acinq.eclair.wire.internal.channel.version3
 
+import akka.actor.typed
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.{ExtendedPrivateKey, KeyPath}
-import fr.acinq.bitcoin.scalacompat.{OutPoint, Satoshi, Transaction, TxOut}
+import fr.acinq.bitcoin.scalacompat.{OutPoint, Transaction, TxOut}
+import fr.acinq.eclair.channel.InteractiveTxBuilder._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.transactions.Transactions._
@@ -328,6 +330,67 @@ private[channel] object ChannelCodecs3 {
         ("shortChannelId" | shortchannelid) ::
         ("lastSent" | lengthDelimited(fundingLockedCodec))).as[DATA_WAIT_FOR_FUNDING_LOCKED]
 
+    private val remoteTxAddInputCodec: Codec[RemoteTxAddInput] = (
+      ("serialId" | uint64) ::
+        ("outPoint" | outPointCodec) ::
+        ("txOut" | txOutCodec) ::
+        ("sequence" | uint32)).as[RemoteTxAddInput]
+
+    private val remoteTxAddOutputCodec: Codec[RemoteTxAddOutput] = (
+      ("serialId" | uint64) ::
+        ("amount" | satoshi) ::
+        ("scriptPubKey" | lengthDelimited(bytes))).as[RemoteTxAddOutput]
+
+    private val sharedTransactionCodec: Codec[SharedTransaction] = (
+      ("localInputs" | seqOfN(uint16, lengthDelimited(txAddInputCodec))) ::
+        ("remoteInputs" | seqOfN(uint16, remoteTxAddInputCodec)) ::
+        ("localOutputs" | seqOfN(uint16, lengthDelimited(txAddOutputCodec))) ::
+        ("remoteOutputs" | seqOfN(uint16, remoteTxAddOutputCodec)) ::
+        ("lockTime" | uint32)).as[SharedTransaction]
+
+    private val partiallySignedSharedTransactionCodec: Codec[PartiallySignedSharedTransaction] = (
+      ("sharedTx" | sharedTransactionCodec) ::
+        ("localSigs" | lengthDelimited(txSignaturesCodec))).as[PartiallySignedSharedTransaction]
+
+    private val fullySignedSharedTransactionCodec: Codec[FullySignedSharedTransaction] = (
+      ("sharedTx" | sharedTransactionCodec) ::
+        ("localSigs" | lengthDelimited(txSignaturesCodec)) ::
+        ("remoteSigs" | lengthDelimited(txSignaturesCodec))).as[FullySignedSharedTransaction]
+
+    private val signedSharedTransactionCodec: Codec[SignedSharedTransaction] = discriminated[SignedSharedTransaction].by(uint16)
+      .typecase(0x01, partiallySignedSharedTransactionCodec)
+      .typecase(0x02, fullySignedSharedTransactionCodec)
+
+    private val dualFundingTxCodec: Codec[DualFundingTx] = (
+      ("fundingTx" | signedSharedTransactionCodec) ::
+        ("commitments" | commitmentsCodec)).as[DualFundingTx]
+
+    private val fundingParamsCodec: Codec[InteractiveTxParams] = (
+      ("channelId" | bytes32) ::
+        ("isInitiator" | bool8) ::
+        ("localAmount" | satoshi) ::
+        ("remoteAmount" | satoshi) ::
+        ("fundingPubkeyScript" | lengthDelimited(bytes)) ::
+        ("lockTime" | uint32) ::
+        ("dustLimit" | satoshi) ::
+        ("targetFeerate" | feeratePerKw)).as[InteractiveTxParams]
+
+    val DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED_Codec: Codec[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED] = (
+      ("commitments" | commitmentsCodec) ::
+        ("fundingTx" | signedSharedTransactionCodec) ::
+        ("fundingParams" | fundingParamsCodec) ::
+        ("previousFundingTxs" | seqOfN(uint16, dualFundingTxCodec)) ::
+        ("waitingSince" | blockHeight) ::
+        ("lastChecked" | blockHeight) ::
+        ("rbfAttempt" | provide(Option.empty[typed.ActorRef[InteractiveTxBuilder.Command]])) ::
+        ("deferred" | optional(bool8, lengthDelimited(fundingLockedCodec)))).as[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED]
+
+    val DATA_WAIT_FOR_DUAL_FUNDING_LOCKED_Codec: Codec[DATA_WAIT_FOR_DUAL_FUNDING_LOCKED] = (
+      ("commitments" | commitmentsCodec) ::
+        ("shortChannelId" | shortchannelid) ::
+        ("otherFundingTxs" | seqOfN(uint16, dualFundingTxCodec)) ::
+        ("lastSent" | lengthDelimited(fundingLockedCodec))).as[DATA_WAIT_FOR_DUAL_FUNDING_LOCKED]
+
     val DATA_NORMAL_COMPAT_02_Codec: Codec[DATA_NORMAL] = (
       ("commitments" | commitmentsCodec) ::
         ("shortChannelId" | shortchannelid) ::
@@ -387,6 +450,8 @@ private[channel] object ChannelCodecs3 {
 
   // Order matters!
   val channelDataCodec: Codec[PersistentChannelData] = discriminated[PersistentChannelData].by(uint16)
+    .typecase(0x0a, Codecs.DATA_WAIT_FOR_DUAL_FUNDING_LOCKED_Codec)
+    .typecase(0x09, Codecs.DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED_Codec)
     .typecase(0x08, Codecs.DATA_SHUTDOWN_Codec)
     .typecase(0x07, Codecs.DATA_NORMAL_Codec)
     .typecase(0x06, Codecs.DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_Codec)

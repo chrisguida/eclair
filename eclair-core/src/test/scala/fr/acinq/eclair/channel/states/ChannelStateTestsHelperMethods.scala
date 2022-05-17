@@ -208,35 +208,85 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
     assert(alice2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId === ByteVector32.Zeroes)
     bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, nonInitiatorFundingAmount, dualFunded, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
     assert(bob2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId === ByteVector32.Zeroes)
-    alice2bob.expectMsgType[OpenChannel]
-    alice2bob.forward(bob)
-    bob2alice.expectMsgType[AcceptChannel]
-    bob2alice.forward(alice)
-    alice2bob.expectMsgType[FundingCreated]
-    alice2bob.forward(bob)
-    bob2alice.expectMsgType[FundingSigned]
-    bob2alice.forward(alice)
-    assert(alice2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId != ByteVector32.Zeroes)
-    alice2blockchain.expectMsgType[WatchFundingSpent]
-    alice2blockchain.expectMsgType[WatchFundingConfirmed]
-    assert(bob2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId != ByteVector32.Zeroes)
-    bob2blockchain.expectMsgType[WatchFundingSpent]
-    bob2blockchain.expectMsgType[WatchFundingConfirmed]
-    awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
-    val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx.get
-    alice ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
-    bob ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
-    alice2blockchain.expectMsgType[WatchFundingLost]
-    bob2blockchain.expectMsgType[WatchFundingLost]
-    alice2bob.expectMsgType[FundingLocked]
-    alice2bob.forward(bob)
-    bob2alice.expectMsgType[FundingLocked]
-    bob2alice.forward(alice)
-    alice2blockchain.expectMsgType[WatchFundingDeeplyBuried]
-    bob2blockchain.expectMsgType[WatchFundingDeeplyBuried]
-    awaitCond(alice.stateName == NORMAL)
-    awaitCond(bob.stateName == NORMAL)
-    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.availableBalanceForSend == (pushMsat - aliceParams.requestedChannelReserve).max(0 msat))
+    if (!dualFunded) {
+      alice2bob.expectMsgType[OpenChannel]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[AcceptChannel]
+      bob2alice.forward(alice)
+      alice2bob.expectMsgType[FundingCreated]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[FundingSigned]
+      bob2alice.forward(alice)
+      assert(alice2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId != ByteVector32.Zeroes)
+      alice2blockchain.expectMsgType[WatchFundingSpent]
+      alice2blockchain.expectMsgType[WatchFundingConfirmed]
+      assert(bob2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId != ByteVector32.Zeroes)
+      bob2blockchain.expectMsgType[WatchFundingSpent]
+      bob2blockchain.expectMsgType[WatchFundingConfirmed]
+      awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
+      val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx.get
+      alice ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
+      bob ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
+      alice2blockchain.expectMsgType[WatchFundingLost]
+      bob2blockchain.expectMsgType[WatchFundingLost]
+      alice2bob.expectMsgType[FundingLocked]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[FundingLocked]
+      bob2alice.forward(alice)
+      alice2blockchain.expectMsgType[WatchFundingDeeplyBuried]
+      bob2blockchain.expectMsgType[WatchFundingDeeplyBuried]
+      awaitCond(alice.stateName == NORMAL)
+      awaitCond(bob.stateName == NORMAL)
+    } else {
+      alice2bob.expectMsgType[OpenDualFundedChannel]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[AcceptDualFundedChannel]
+      bob2alice.forward(alice)
+      assert(alice2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId != ByteVector32.Zeroes)
+      assert(bob2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId != ByteVector32.Zeroes)
+      alice2bob.expectMsgType[TxAddInput]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[TxAddInput]
+      bob2alice.forward(alice)
+      alice2bob.expectMsgType[TxAddOutput]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[TxAddOutput]
+      bob2alice.forward(alice)
+      alice2bob.expectMsgType[TxAddOutput]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[TxComplete]
+      bob2alice.forward(alice)
+      alice2bob.expectMsgType[TxComplete]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[CommitSig]
+      bob2alice.forward(alice)
+      alice2bob.expectMsgType[CommitSig]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[TxSignatures]
+      bob2alice.forward(alice)
+      alice2bob.expectMsgType[TxSignatures]
+      alice2bob.forward(bob)
+      awaitCond(alice.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
+      awaitCond(bob.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
+      alice2blockchain.expectMsgType[WatchFundingConfirmed]
+      bob2blockchain.expectMsgType[WatchFundingConfirmed]
+      val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].fundingTx.asInstanceOf[FullySignedSharedTransaction].signedTx
+      alice ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
+      bob ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
+      alice2blockchain.expectMsgType[WatchFundingSpent]
+      bob2blockchain.expectMsgType[WatchFundingSpent]
+      alice2bob.expectMsgType[FundingLocked]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[FundingLocked]
+      bob2alice.forward(alice)
+      alice2blockchain.expectMsgType[WatchFundingDeeplyBuried]
+      bob2blockchain.expectMsgType[WatchFundingDeeplyBuried]
+      awaitCond(alice.stateName == NORMAL)
+      awaitCond(bob.stateName == NORMAL)
+    }
+    val aliceCommitments = alice.stateData.asInstanceOf[DATA_NORMAL].commitments
+    val bobCommitments = bob.stateData.asInstanceOf[DATA_NORMAL].commitments
+    assert(bobCommitments.availableBalanceForSend == (nonInitiatorFundingAmount.getOrElse(0 sat) + pushMsat - aliceCommitments.remoteChannelReserve).max(0 msat))
     // x2 because alice and bob share the same relayer
     channelUpdateListener.expectMsgType[LocalChannelUpdate]
     channelUpdateListener.expectMsgType[LocalChannelUpdate]

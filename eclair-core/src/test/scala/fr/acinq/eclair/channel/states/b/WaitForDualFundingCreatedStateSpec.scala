@@ -95,8 +95,8 @@ class WaitForDualFundingCreatedStateSpec extends TestKitBaseClass with FixtureAn
 
     // Bob sends its signatures first as he contributed less than Alice.
     bob2alice.expectMsgType[TxSignatures]
-    awaitCond(bob.stateName == WAIT_FOR_DUAL_FUNDING_PLACEHOLDER)
-    val bobData = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_PLACEHOLDER]
+    awaitCond(bob.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
+    val bobData = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED]
     assert(bobData.commitments.channelFeatures.hasFeature(Features.DualFunding))
     assert(bobData.fundingTx.isInstanceOf[PartiallySignedSharedTransaction])
     val fundingTxId = bobData.fundingTx.asInstanceOf[PartiallySignedSharedTransaction].tx.buildUnsignedTx().txid
@@ -107,8 +107,8 @@ class WaitForDualFundingCreatedStateSpec extends TestKitBaseClass with FixtureAn
     assert(listener.expectMsgType[TransactionPublished].tx.txid === fundingTxId)
     assert(alice2blockchain.expectMsgType[WatchFundingConfirmed].txId === fundingTxId)
     alice2bob.expectMsgType[TxSignatures]
-    awaitCond(alice.stateName == WAIT_FOR_DUAL_FUNDING_PLACEHOLDER)
-    val aliceData = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_PLACEHOLDER]
+    awaitCond(alice.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
+    val aliceData = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED]
     assert(aliceData.commitments.channelFeatures.hasFeature(Features.DualFunding))
     assert(aliceData.fundingTx.isInstanceOf[FullySignedSharedTransaction])
     assert(aliceData.fundingTx.asInstanceOf[FullySignedSharedTransaction].signedTx.txid === fundingTxId)
@@ -194,6 +194,12 @@ class WaitForDualFundingCreatedStateSpec extends TestKitBaseClass with FixtureAn
     awaitCond(wallet.rolledback.size == 1)
     awaitCond(alice.stateName == CLOSED)
     aliceOrigin.expectMsgType[Status.Failure]
+
+    // Bob has sent his signatures already, so he cannot close the channel yet.
+    alice2bob.forward(bob, TxSignatures(channelId(alice), randomBytes32(), Nil))
+    bob2alice.expectMsgType[Error]
+    bob2blockchain.expectNoMessage(100 millis)
+    assert(bob.stateName === WAIT_FOR_DUAL_FUNDING_CONFIRMED)
   }
 
   test("recv TxAbort", Tag(ChannelStateTestsTags.DualFunding)) { f =>
