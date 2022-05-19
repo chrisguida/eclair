@@ -18,7 +18,7 @@ package fr.acinq.eclair.channel
 
 import akka.actor.{ActorRef, PossiblyHarmful}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, DeterministicWallet, OutPoint, Satoshi, SatoshiLong, Transaction}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, DeterministicWallet, OutPoint, Satoshi, Transaction}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.transactions.CommitmentSpec
@@ -48,6 +48,7 @@ import java.util.UUID
 sealed trait ChannelState
 case object WAIT_FOR_INIT_INTERNAL extends ChannelState
 // Single-funder channel opening:
+case object WAIT_FOR_INIT_CHANNEL extends ChannelState
 case object WAIT_FOR_OPEN_CHANNEL extends ChannelState
 case object WAIT_FOR_ACCEPT_CHANNEL extends ChannelState
 case object WAIT_FOR_FUNDING_INTERNAL extends ChannelState
@@ -56,6 +57,7 @@ case object WAIT_FOR_FUNDING_SIGNED extends ChannelState
 case object WAIT_FOR_FUNDING_CONFIRMED extends ChannelState
 case object WAIT_FOR_FUNDING_LOCKED extends ChannelState
 // Dual-funded channel opening:
+case object WAIT_FOR_INIT_DUAL_FUNDED_CHANNEL extends ChannelState
 case object WAIT_FOR_OPEN_DUAL_FUNDED_CHANNEL extends ChannelState
 case object WAIT_FOR_ACCEPT_DUAL_FUNDED_CHANNEL extends ChannelState
 case object WAIT_FOR_DUAL_FUNDING_INTERNAL extends ChannelState

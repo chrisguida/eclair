@@ -22,7 +22,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel.TickChannelOpenTimeout
 import fr.acinq.eclair.channel.publish.TxPublisher.SetChannelId
 import fr.acinq.eclair.transactions.Scripts
-import fr.acinq.eclair.wire.protocol.{AcceptDualFundedChannel, AcceptDualFundedChannelTlv, ChannelTlv, Error, OpenDualFundedChannel, TlvStream}
+import fr.acinq.eclair.wire.protocol.{AcceptDualFundedChannel, AcceptDualFundedChannelTlv, ChannelTlv, Error, OpenDualFundedChannel, OpenDualFundedChannelTlv, TlvStream}
 
 /**
  * Created by t-bast on 19/04/2022.
@@ -66,6 +66,38 @@ trait ChannelOpenDualFunded extends FundingHandlers with ErrorHandlers {
                                          |<---------------  -------------->|
                                   NORMAL |                                 | NORMAL
  */
+
+  when(WAIT_FOR_INIT_DUAL_FUNDED_CHANNEL)(handleExceptions {
+    case Event(input: INPUT_INIT_CHANNEL_INITIATOR, _) =>
+      val fundingPubKey = keyManager.fundingPublicKey(input.localParams.fundingKeyPath).publicKey
+      val channelKeyPath = keyManager.keyPath(input.localParams, input.channelConfig)
+      val tlvs: TlvStream[OpenDualFundedChannelTlv] = if (Features.canUseFeature(input.localParams.initFeatures, input.remoteInit.features, Features.UpfrontShutdownScript)) {
+        TlvStream(ChannelTlv.UpfrontShutdownScriptTlv(input.localParams.defaultFinalScriptPubKey), ChannelTlv.ChannelTypeTlv(input.channelType))
+      } else {
+        TlvStream(ChannelTlv.ChannelTypeTlv(input.channelType))
+      }
+      val open = OpenDualFundedChannel(
+        chainHash = nodeParams.chainHash,
+        temporaryChannelId = input.temporaryChannelId,
+        fundingFeerate = input.fundingTxFeerate,
+        commitmentFeerate = input.commitTxFeerate,
+        fundingAmount = input.fundingAmount,
+        dustLimit = input.localParams.dustLimit,
+        maxHtlcValueInFlightMsat = input.localParams.maxHtlcValueInFlightMsat,
+        htlcMinimum = input.localParams.htlcMinimum,
+        toSelfDelay = input.localParams.toSelfDelay,
+        maxAcceptedHtlcs = input.localParams.maxAcceptedHtlcs,
+        lockTime = nodeParams.currentBlockHeight.toLong,
+        fundingPubkey = fundingPubKey,
+        revocationBasepoint = keyManager.revocationPoint(channelKeyPath).publicKey,
+        paymentBasepoint = input.localParams.walletStaticPaymentBasepoint.getOrElse(keyManager.paymentPoint(channelKeyPath).publicKey),
+        delayedPaymentBasepoint = keyManager.delayedPaymentPoint(channelKeyPath).publicKey,
+        htlcBasepoint = keyManager.htlcPoint(channelKeyPath).publicKey,
+        firstPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 0),
+        channelFlags = input.channelFlags,
+        tlvStream = tlvs)
+      goto(WAIT_FOR_ACCEPT_DUAL_FUNDED_CHANNEL) using DATA_WAIT_FOR_ACCEPT_DUAL_FUNDED_CHANNEL(input, open) sending open
+  })
 
   when(WAIT_FOR_OPEN_DUAL_FUNDED_CHANNEL)(handleExceptions {
     case Event(open: OpenDualFundedChannel, d: DATA_WAIT_FOR_OPEN_DUAL_FUNDED_CHANNEL) =>

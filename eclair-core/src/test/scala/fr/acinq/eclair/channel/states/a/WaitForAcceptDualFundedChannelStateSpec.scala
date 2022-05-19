@@ -64,7 +64,7 @@ class WaitForAcceptDualFundedChannelStateSpec extends TestKitBaseClass with Fixt
     assert(accept.fundingAmount === 0.sat)
 
     val listener = TestProbe()
-    system.eventStream.subscribe(listener.ref, classOf[ChannelIdAssigned])
+    alice.underlyingActor.context.system.eventStream.subscribe(listener.ref, classOf[ChannelIdAssigned])
     bob2alice.forward(alice, accept)
     assert(listener.expectMsgType[ChannelIdAssigned].channelId === Helpers.computeChannelId(open, accept))
 

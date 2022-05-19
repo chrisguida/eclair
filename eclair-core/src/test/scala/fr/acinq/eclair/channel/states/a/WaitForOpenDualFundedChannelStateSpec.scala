@@ -31,15 +31,19 @@ import scala.concurrent.duration.DurationInt
 
 class WaitForOpenDualFundedChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with ChannelStateTestsBase {
 
-  case class FixtureParam(alice: TestFSMRef[ChannelState, ChannelData, Channel], bob: TestFSMRef[ChannelState, ChannelData, Channel], alice2bob: TestProbe, bob2alice: TestProbe, eventListener: TestProbe)
+  case class FixtureParam(alice: TestFSMRef[ChannelState, ChannelData, Channel], bob: TestFSMRef[ChannelState, ChannelData, Channel], alice2bob: TestProbe, bob2alice: TestProbe, aliceListener: TestProbe, bobListener: TestProbe)
 
   override def withFixture(test: OneArgTest): Outcome = {
     val setup = init()
     import setup._
 
-    val listener = TestProbe()
-    system.eventStream.subscribe(listener.ref, classOf[ChannelCreated])
-    system.eventStream.subscribe(listener.ref, classOf[ChannelIdAssigned])
+    val aliceListener = TestProbe()
+    alice.underlyingActor.context.system.eventStream.subscribe(aliceListener.ref, classOf[ChannelCreated])
+    alice.underlyingActor.context.system.eventStream.subscribe(aliceListener.ref, classOf[ChannelIdAssigned])
+    val bobListener = TestProbe()
+    bob.underlyingActor.context.system.eventStream.subscribe(bobListener.ref, classOf[ChannelCreated])
+    bob.underlyingActor.context.system.eventStream.subscribe(bobListener.ref, classOf[ChannelIdAssigned])
+
     val channelConfig = ChannelConfig.standard
     val (aliceParams, bobParams, channelType) = computeFeatures(setup, test.tags)
     val aliceInit = Init(aliceParams.initFeatures)
@@ -48,7 +52,7 @@ class WaitForOpenDualFundedChannelStateSpec extends TestKitBaseClass with Fixtur
       alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, TestConstants.fundingSatoshis, dualFunded = true, TestConstants.anchorOutputsFeeratePerKw, TestConstants.feeratePerKw, None, aliceParams, alice2bob.ref, bobInit, ChannelFlags.Private, channelConfig, channelType)
       bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, None, dualFunded = true, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
       awaitCond(bob.stateName == WAIT_FOR_OPEN_DUAL_FUNDED_CHANNEL)
-      withFixture(test.toNoArgTest(FixtureParam(alice, bob, alice2bob, bob2alice, listener)))
+      withFixture(test.toNoArgTest(FixtureParam(alice, bob, alice2bob, bob2alice, aliceListener, bobListener)))
     }
   }
 
@@ -62,18 +66,18 @@ class WaitForOpenDualFundedChannelStateSpec extends TestKitBaseClass with Fixtur
     assert(open.commitmentFeerate === TestConstants.anchorOutputsFeeratePerKw)
     assert(open.lockTime === TestConstants.defaultBlockHeight)
 
-    val initiatorEvent = eventListener.expectMsgType[ChannelCreated]
+    val initiatorEvent = aliceListener.expectMsgType[ChannelCreated]
     assert(initiatorEvent.isInitiator)
     assert(initiatorEvent.temporaryChannelId === ByteVector32.Zeroes)
 
     alice2bob.forward(bob)
 
-    val nonInitiatorEvent = eventListener.expectMsgType[ChannelCreated]
+    val nonInitiatorEvent = bobListener.expectMsgType[ChannelCreated]
     assert(!nonInitiatorEvent.isInitiator)
     assert(nonInitiatorEvent.temporaryChannelId === ByteVector32.Zeroes)
 
     val accept = bob2alice.expectMsgType[AcceptDualFundedChannel]
-    val channelIdAssigned = eventListener.expectMsgType[ChannelIdAssigned]
+    val channelIdAssigned = bobListener.expectMsgType[ChannelIdAssigned]
     assert(channelIdAssigned.temporaryChannelId === ByteVector32.Zeroes)
     assert(channelIdAssigned.channelId === Helpers.computeChannelId(open, accept))
 
