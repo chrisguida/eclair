@@ -47,7 +47,6 @@ import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions.ClosingTx
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.protocol._
-import scodec.bits.ByteVector
 
 import scala.collection.immutable.Queue
 import scala.concurrent.ExecutionContext
@@ -213,63 +212,12 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, val 
       context.system.eventStream.publish(ChannelCreated(self, peer, remoteNodeId, isInitiator = true, input.temporaryChannelId, input.commitTxFeerate, Some(input.fundingTxFeerate)))
       activeConnection = input.remote
       txPublisher ! SetChannelId(remoteNodeId, input.temporaryChannelId)
-      val fundingPubKey = keyManager.fundingPublicKey(input.localParams.fundingKeyPath).publicKey
-      val channelKeyPath = keyManager.keyPath(input.localParams, input.channelConfig)
+      // We will process the input in the next state differently depending on whether we use dual-funding or not.
+      self ! input
       if (input.dualFunded) {
-        val tlvs: TlvStream[OpenDualFundedChannelTlv] = if (Features.canUseFeature(input.localParams.initFeatures, input.remoteInit.features, Features.UpfrontShutdownScript)) {
-          TlvStream(ChannelTlv.UpfrontShutdownScriptTlv(input.localParams.defaultFinalScriptPubKey), ChannelTlv.ChannelTypeTlv(input.channelType))
-        } else {
-          TlvStream(ChannelTlv.ChannelTypeTlv(input.channelType))
-        }
-        val open = OpenDualFundedChannel(
-          chainHash = nodeParams.chainHash,
-          temporaryChannelId = input.temporaryChannelId,
-          fundingFeerate = input.fundingTxFeerate,
-          commitmentFeerate = input.commitTxFeerate,
-          fundingAmount = input.fundingAmount,
-          dustLimit = input.localParams.dustLimit,
-          maxHtlcValueInFlightMsat = input.localParams.maxHtlcValueInFlightMsat,
-          htlcMinimum = input.localParams.htlcMinimum,
-          toSelfDelay = input.localParams.toSelfDelay,
-          maxAcceptedHtlcs = input.localParams.maxAcceptedHtlcs,
-          lockTime = nodeParams.currentBlockHeight.toLong,
-          fundingPubkey = fundingPubKey,
-          revocationBasepoint = keyManager.revocationPoint(channelKeyPath).publicKey,
-          paymentBasepoint = input.localParams.walletStaticPaymentBasepoint.getOrElse(keyManager.paymentPoint(channelKeyPath).publicKey),
-          delayedPaymentBasepoint = keyManager.delayedPaymentPoint(channelKeyPath).publicKey,
-          htlcBasepoint = keyManager.htlcPoint(channelKeyPath).publicKey,
-          firstPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 0),
-          channelFlags = input.channelFlags,
-          tlvStream = tlvs)
-        goto(WAIT_FOR_ACCEPT_DUAL_FUNDED_CHANNEL) using DATA_WAIT_FOR_ACCEPT_DUAL_FUNDED_CHANNEL(input, open) sending open
+        goto(WAIT_FOR_INIT_DUAL_FUNDED_CHANNEL)
       } else {
-        // In order to allow TLV extensions and keep backwards-compatibility, we include an empty upfront_shutdown_script if this feature is not used
-        // See https://github.com/lightningnetwork/lightning-rfc/pull/714.
-        val localShutdownScript = if (Features.canUseFeature(input.localParams.initFeatures, input.remoteInit.features, Features.UpfrontShutdownScript)) input.localParams.defaultFinalScriptPubKey else ByteVector.empty
-        val open = OpenChannel(
-          chainHash = nodeParams.chainHash,
-          temporaryChannelId = input.temporaryChannelId,
-          fundingSatoshis = input.fundingAmount,
-          pushMsat = input.pushAmount_opt.getOrElse(0 msat),
-          dustLimitSatoshis = input.localParams.dustLimit,
-          maxHtlcValueInFlightMsat = input.localParams.maxHtlcValueInFlightMsat,
-          channelReserveSatoshis = input.localParams.requestedChannelReserve_opt.getOrElse(0 sat),
-          htlcMinimumMsat = input.localParams.htlcMinimum,
-          feeratePerKw = input.commitTxFeerate,
-          toSelfDelay = input.localParams.toSelfDelay,
-          maxAcceptedHtlcs = input.localParams.maxAcceptedHtlcs,
-          fundingPubkey = fundingPubKey,
-          revocationBasepoint = keyManager.revocationPoint(channelKeyPath).publicKey,
-          paymentBasepoint = input.localParams.walletStaticPaymentBasepoint.getOrElse(keyManager.paymentPoint(channelKeyPath).publicKey),
-          delayedPaymentBasepoint = keyManager.delayedPaymentPoint(channelKeyPath).publicKey,
-          htlcBasepoint = keyManager.htlcPoint(channelKeyPath).publicKey,
-          firstPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 0),
-          channelFlags = input.channelFlags,
-          tlvStream = TlvStream(
-            ChannelTlv.UpfrontShutdownScriptTlv(localShutdownScript),
-            ChannelTlv.ChannelTypeTlv(input.channelType)
-          ))
-        goto(WAIT_FOR_ACCEPT_CHANNEL) using DATA_WAIT_FOR_ACCEPT_CHANNEL(input, open) sending open
+        goto(WAIT_FOR_INIT_CHANNEL)
       }
 
     case Event(input: INPUT_INIT_CHANNEL_NON_INITIATOR, Nothing) if !input.localParams.isInitiator =>

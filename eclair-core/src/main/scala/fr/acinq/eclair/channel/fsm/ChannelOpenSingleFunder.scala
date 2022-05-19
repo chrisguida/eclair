@@ -72,6 +72,43 @@ trait ChannelOpenSingleFunder extends FundingHandlers with ErrorHandlers {
                          NORMAL|                                |NORMAL
  */
 
+  when(WAIT_FOR_INIT_CHANNEL)(handleExceptions {
+    case Event(input: INPUT_INIT_CHANNEL_INITIATOR, _) =>
+      val fundingPubKey = keyManager.fundingPublicKey(input.localParams.fundingKeyPath).publicKey
+      val channelKeyPath = keyManager.keyPath(input.localParams, input.channelConfig)
+      // In order to allow TLV extensions and keep backwards-compatibility, we include an empty upfront_shutdown_script if this feature is not used
+      // See https://github.com/lightningnetwork/lightning-rfc/pull/714.
+      val localShutdownScript = if (Features.canUseFeature(input.localParams.initFeatures, input.remoteInit.features, Features.UpfrontShutdownScript)) {
+        input.localParams.defaultFinalScriptPubKey
+      } else {
+        ByteVector.empty
+      }
+      val open = OpenChannel(
+        chainHash = nodeParams.chainHash,
+        temporaryChannelId = input.temporaryChannelId,
+        fundingSatoshis = input.fundingAmount,
+        pushMsat = input.pushAmount_opt.getOrElse(0 msat),
+        dustLimitSatoshis = input.localParams.dustLimit,
+        maxHtlcValueInFlightMsat = input.localParams.maxHtlcValueInFlightMsat,
+        channelReserveSatoshis = input.localParams.requestedChannelReserve_opt.getOrElse(0 sat),
+        htlcMinimumMsat = input.localParams.htlcMinimum,
+        feeratePerKw = input.commitTxFeerate,
+        toSelfDelay = input.localParams.toSelfDelay,
+        maxAcceptedHtlcs = input.localParams.maxAcceptedHtlcs,
+        fundingPubkey = fundingPubKey,
+        revocationBasepoint = keyManager.revocationPoint(channelKeyPath).publicKey,
+        paymentBasepoint = input.localParams.walletStaticPaymentBasepoint.getOrElse(keyManager.paymentPoint(channelKeyPath).publicKey),
+        delayedPaymentBasepoint = keyManager.delayedPaymentPoint(channelKeyPath).publicKey,
+        htlcBasepoint = keyManager.htlcPoint(channelKeyPath).publicKey,
+        firstPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 0),
+        channelFlags = input.channelFlags,
+        tlvStream = TlvStream(
+          ChannelTlv.UpfrontShutdownScriptTlv(localShutdownScript),
+          ChannelTlv.ChannelTypeTlv(input.channelType)
+        ))
+      goto(WAIT_FOR_ACCEPT_CHANNEL) using DATA_WAIT_FOR_ACCEPT_CHANNEL(input, open) sending open
+  })
+
   when(WAIT_FOR_OPEN_CHANNEL)(handleExceptions {
     case Event(open: OpenChannel, d@DATA_WAIT_FOR_OPEN_CHANNEL(INPUT_INIT_CHANNEL_NON_INITIATOR(_, _, _, localParams, _, remoteInit, channelConfig, channelType))) =>
       Helpers.validateParamsFundee(nodeParams, channelType, localParams.initFeatures, open, remoteNodeId, remoteInit.features) match {
