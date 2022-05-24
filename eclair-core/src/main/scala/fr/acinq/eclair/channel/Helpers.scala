@@ -257,13 +257,19 @@ object Helpers {
     extractShutdownScript(accept.temporaryChannelId, localFeatures, remoteFeatures, accept.upfrontShutdownScript_opt).map(script_opt => (channelFeatures, script_opt))
   }
 
+  /** Compute the temporaryChannelId of a dual-funded channel. */
+  def dualFundedTemporaryChannelId(nodeParams: NodeParams, localParams: LocalParams, channelConfig: ChannelConfig): ByteVector32 = {
+    val channelKeyPath = nodeParams.channelKeyManager.keyPath(localParams, channelConfig)
+    val revocationBasepoint = nodeParams.channelKeyManager.revocationPoint(channelKeyPath).publicKey
+    Crypto.sha256(ByteVector.fill(33)(0) ++ revocationBasepoint.value)
+  }
+
   /** Compute the channelId of a dual-funded channel. */
   def computeChannelId(open: OpenDualFundedChannel, accept: AcceptDualFundedChannel): ByteVector32 = {
-    if (LexicographicalOrdering.isLessThan(open.revocationBasepoint.value, accept.revocationBasepoint.value)) {
-      Crypto.sha256(open.revocationBasepoint.value ++ accept.revocationBasepoint.value)
-    } else {
-      Crypto.sha256(accept.revocationBasepoint.value ++ open.revocationBasepoint.value)
-    }
+    val bin = Seq(open.revocationBasepoint.value, accept.revocationBasepoint.value)
+      .sortWith(LexicographicalOrdering.isLessThan)
+      .reduce(_ ++ _)
+    Crypto.sha256(bin)
   }
 
   /**

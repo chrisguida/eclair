@@ -150,13 +150,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
           val channelType = c.channelType_opt.getOrElse(ChannelTypes.defaultFromFeatures(d.localFeatures, d.remoteFeatures))
           val (channel, localParams) = createNewChannel(nodeParams, d.localFeatures, channelType, isInitiator = true, c.fundingAmount, origin_opt = Some(sender()))
           c.timeout_opt.map(openTimeout => context.system.scheduler.scheduleOnce(openTimeout.duration, channel, Channel.TickChannelOpenTimeout)(context.dispatcher))
-          val temporaryChannelId = if (dualFunded) {
-            val channelKeyPath = nodeParams.channelKeyManager.keyPath(localParams, channelConfig)
-            val revocationBasepoint = nodeParams.channelKeyManager.revocationPoint(channelKeyPath).publicKey
-            Crypto.sha256(ByteVector.fill(33)(0) ++ revocationBasepoint.value)
-          } else {
-            randomBytes32()
-          }
+          val temporaryChannelId = if (dualFunded) Helpers.dualFundedTemporaryChannelId(nodeParams, localParams, channelConfig) else randomBytes32()
           val fundingTxFeerate = c.fundingTxFeerate_opt.getOrElse(nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(target = nodeParams.onChainFeeConf.feeTargets.fundingBlockTarget))
           val commitTxFeerate = nodeParams.onChainFeeConf.getCommitmentFeerate(remoteNodeId, channelType, c.fundingAmount, None)
           log.info(s"requesting a new channel with type=$channelType fundingAmount=${c.fundingAmount} dualFunded=$dualFunded pushAmount=${c.pushAmount_opt} fundingFeerate=$fundingTxFeerate temporaryChannelId=$temporaryChannelId localParams=$localParams")
