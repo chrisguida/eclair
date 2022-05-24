@@ -22,7 +22,7 @@ import akka.event.Logging.MDC
 import akka.event.{BusLogging, DiagnosticLoggingAdapter}
 import akka.util.Timeout
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, Satoshi, SatoshiLong, Script}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, SatoshiLong, Script}
 import fr.acinq.eclair.Features.Wumbo
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
@@ -158,15 +158,53 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
           stay() using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
         }
 
-      case Event(msg: protocol.OpenChannel, d: ConnectedData) => acceptOrRejectChannel(Left(msg), d)
+      case Event(open: protocol.OpenChannel, d: ConnectedData) =>
+        d.channels.get(TemporaryChannelId(open.temporaryChannelId)) match {
+          case None =>
+            validateRemoteChannelType(open.temporaryChannelId, open.channelType_opt, d.localFeatures, d.remoteFeatures) match {
+              case Right(channelType) =>
+                val channelConfig = ChannelConfig.standard
+                val (channel, localParams) = createNewChannel(nodeParams, d.localFeatures, channelType, isInitiator = false, open.fundingSatoshis, None)
+                log.info(s"accepting a new channel with type=$channelType temporaryChannelId=${open.temporaryChannelId} localParams=$localParams")
+                channel ! INPUT_INIT_CHANNEL_NON_INITIATOR(open.temporaryChannelId, None, dualFunded = false, localParams, d.peerConnection, d.remoteInit, channelConfig, channelType)
+                channel ! open
+                stay() using d.copy(channels = d.channels + (TemporaryChannelId(open.temporaryChannelId) -> channel))
+              case Left(ex) =>
+                log.warning("ignoring open_channel: {}", ex.getMessage)
+                val err = Error(open.temporaryChannelId, ex.getMessage)
+                self ! Peer.OutgoingMessage(err, d.peerConnection)
+                stay()
+            }
+          case Some(_) =>
+            log.warning("ignoring open_channel with duplicate temporaryChannelId={}", open.temporaryChannelId)
+            stay()
+        }
 
-      case Event(msg: protocol.OpenDualFundedChannel, d: ConnectedData) =>
-        if (Features.canUseFeature(d.localFeatures, d.remoteFeatures, Features.DualFunding)) {
-          acceptOrRejectChannel(Right(msg), d)
-        } else {
-          log.info("rejecting open_channel2: dual funding is not supported")
-          self ! Peer.OutgoingMessage(Error(msg.temporaryChannelId, "dual funding is not supported"), d.peerConnection)
-          stay()
+      case Event(open: protocol.OpenDualFundedChannel, d: ConnectedData) =>
+        d.channels.get(TemporaryChannelId(open.temporaryChannelId)) match {
+          case None if Features.canUseFeature(d.localFeatures, d.remoteFeatures, Features.DualFunding) =>
+            validateRemoteChannelType(open.temporaryChannelId, open.channelType_opt, d.localFeatures, d.remoteFeatures) match {
+              case Right(channelType) =>
+                val channelConfig = ChannelConfig.standard
+                val (channel, localParams) = createNewChannel(nodeParams, d.localFeatures, channelType, isInitiator = false, open.fundingAmount, None)
+                log.info(s"accepting a new channel with type=$channelType temporaryChannelId=${open.temporaryChannelId} localParams=$localParams")
+                // NB: we don't add a contribution to the funding amount.
+                channel ! INPUT_INIT_CHANNEL_NON_INITIATOR(open.temporaryChannelId, None, dualFunded = true, localParams, d.peerConnection, d.remoteInit, channelConfig, channelType)
+                channel ! open
+                stay() using d.copy(channels = d.channels + (TemporaryChannelId(open.temporaryChannelId) -> channel))
+              case Left(ex) =>
+                log.warning("ignoring open_channel2: {}", ex.getMessage)
+                val err = Error(open.temporaryChannelId, ex.getMessage)
+                self ! Peer.OutgoingMessage(err, d.peerConnection)
+                stay()
+            }
+          case None =>
+            log.info("rejecting open_channel2: dual funding is not supported")
+            self ! Peer.OutgoingMessage(Error(open.temporaryChannelId, "dual funding is not supported"), d.peerConnection)
+            stay()
+          case Some(_) =>
+            log.warning("ignoring open_channel2 with duplicate temporaryChannelId={}", open.temporaryChannelId)
+            stay()
         }
 
       case Event(msg: HasChannelId, d: ConnectedData) =>
@@ -357,48 +395,17 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
     self ! Peer.OutgoingMessage(msg, peerConnection)
   }
 
-  def acceptOrRejectChannel(msg: Either[protocol.OpenChannel, protocol.OpenDualFundedChannel], d: ConnectedData): State = {
-    val temporaryChannelId = msg.fold(_.temporaryChannelId, _.temporaryChannelId)
-    val msgName = msg.fold(_ => "open_channel", _ => "open_channel2")
-    d.channels.get(TemporaryChannelId(temporaryChannelId)) match {
-      case None =>
-        val channelConfig = ChannelConfig.standard
-        val channelType_opt = msg.fold(_.channelType_opt, _.channelType_opt)
-        val chosenChannelType: Either[ChannelException, SupportedChannelType] = channelType_opt match {
-          // remote explicitly specifies a channel type: we check whether we want to allow it
-          case Some(remoteChannelType) => ChannelTypes.areCompatible(d.localFeatures, remoteChannelType) match {
-            case Some(acceptedChannelType) => Right(acceptedChannelType)
-            case None => Left(InvalidChannelType(temporaryChannelId, ChannelTypes.defaultFromFeatures(d.localFeatures, d.remoteFeatures), remoteChannelType))
-          }
-          // Bolt 2: if `option_channel_type` is negotiated: MUST set `channel_type`
-          case None if Features.canUseFeature(d.localFeatures, d.remoteFeatures, Features.ChannelType) => Left(MissingChannelType(temporaryChannelId))
-          // remote doesn't specify a channel type: we use spec-defined defaults
-          case None => Right(ChannelTypes.defaultFromFeatures(d.localFeatures, d.remoteFeatures))
-        }
-        chosenChannelType match {
-          case Right(channelType) =>
-            val fundingAmount = msg.fold(_.fundingSatoshis, _.fundingAmount)
-            val (channel, localParams) = createNewChannel(nodeParams, d.localFeatures, channelType, isInitiator = false, fundingAmount, None)
-            log.info(s"accepting a new channel with type=$channelType temporaryChannelId=$temporaryChannelId localParams=$localParams")
-            msg match {
-              case Left(openSingleFunder) =>
-                channel ! INPUT_INIT_CHANNEL_NON_INITIATOR(temporaryChannelId, None, dualFunded = false, localParams, d.peerConnection, d.remoteInit, channelConfig, channelType)
-                channel ! openSingleFunder
-              case Right(openDualFunded) =>
-                // NB: we don't add a contribution to the funding amount.
-                channel ! INPUT_INIT_CHANNEL_NON_INITIATOR(temporaryChannelId, None, dualFunded = true, localParams, d.peerConnection, d.remoteInit, channelConfig, channelType)
-                channel ! openDualFunded
-            }
-            stay() using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
-          case Left(ex) =>
-            log.warning("ignoring {}: {}", msgName, ex.getMessage)
-            val err = Error(temporaryChannelId, ex.getMessage)
-            self ! Peer.OutgoingMessage(err, d.peerConnection)
-            stay()
-        }
-      case Some(_) =>
-        log.warning("ignoring {} with duplicate temporaryChannelId={}", msgName, temporaryChannelId)
-        stay()
+  def validateRemoteChannelType(temporaryChannelId: ByteVector32, remoteChannelType_opt: Option[ChannelType], localFeatures: Features[InitFeature], remoteFeatures: Features[InitFeature]): Either[ChannelException, SupportedChannelType] = {
+    remoteChannelType_opt match {
+      // remote explicitly specifies a channel type: we check whether we want to allow it
+      case Some(remoteChannelType) => ChannelTypes.areCompatible(localFeatures, remoteChannelType) match {
+        case Some(acceptedChannelType) => Right(acceptedChannelType)
+        case None => Left(InvalidChannelType(temporaryChannelId, ChannelTypes.defaultFromFeatures(localFeatures, remoteFeatures), remoteChannelType))
+      }
+      // Bolt 2: if `option_channel_type` is negotiated: MUST set `channel_type`
+      case None if Features.canUseFeature(localFeatures, remoteFeatures, Features.ChannelType) => Left(MissingChannelType(temporaryChannelId))
+      // remote doesn't specify a channel type: we use spec-defined defaults
+      case None => Right(ChannelTypes.defaultFromFeatures(localFeatures, remoteFeatures))
     }
   }
 
