@@ -75,7 +75,7 @@ class ChannelFeaturesSpec extends TestKitBaseClass with AnyFunSuiteLike with Cha
     )
 
     for (testCase <- testCases) {
-      assert(ChannelTypes.defaultFromFeatures(testCase.localFeatures, testCase.remoteFeatures) === testCase.expectedChannelType)
+      assert(ChannelTypes.defaultFromFeatures(testCase.localFeatures, testCase.remoteFeatures) === testCase.expectedChannelType, s"localFeatures=${testCase.localFeatures} remoteFeatures=${testCase.remoteFeatures}")
     }
   }
 
@@ -83,13 +83,13 @@ class ChannelFeaturesSpec extends TestKitBaseClass with AnyFunSuiteLike with Cha
     case class TestCase(features: Features[InitFeature], expectedChannelType: ChannelType)
 
     val validChannelTypes = Seq(
-      TestCase(Features.empty[InitFeature], ChannelTypes.Standard),
+      TestCase(Features.empty, ChannelTypes.Standard),
       TestCase(Features(StaticRemoteKey -> Mandatory), ChannelTypes.StaticRemoteKey),
       TestCase(Features(StaticRemoteKey -> Mandatory, AnchorOutputs -> Mandatory), ChannelTypes.AnchorOutputs),
       TestCase(Features(StaticRemoteKey -> Mandatory, AnchorOutputsZeroFeeHtlcTx -> Mandatory), ChannelTypes.AnchorOutputsZeroFeeHtlcTx),
     )
     for (testCase <- validChannelTypes) {
-      assert(ChannelTypes.fromFeatures(testCase.features) === testCase.expectedChannelType)
+      assert(ChannelTypes.fromFeatures(testCase.features) === testCase.expectedChannelType, testCase.features)
     }
 
     val invalidChannelTypes: Seq[Features[InitFeature]] = Seq(
@@ -107,7 +107,7 @@ class ChannelFeaturesSpec extends TestKitBaseClass with AnyFunSuiteLike with Cha
       Features(StaticRemoteKey -> Mandatory, AnchorOutputs -> Mandatory, Wumbo -> Optional),
     )
     for (features <- invalidChannelTypes) {
-      assert(ChannelTypes.fromFeatures(features) === ChannelTypes.UnsupportedChannelType(features))
+      assert(ChannelTypes.fromFeatures(features) === ChannelTypes.UnsupportedChannelType(features), features)
     }
   }
 
@@ -125,7 +125,7 @@ class ChannelFeaturesSpec extends TestKitBaseClass with AnyFunSuiteLike with Cha
       TestCase(ChannelTypes.AnchorOutputsZeroFeeHtlcTx, Features(Wumbo -> Optional), Features(Wumbo -> Mandatory), Set(StaticRemoteKey, AnchorOutputsZeroFeeHtlcTx, Wumbo)),
       TestCase(ChannelTypes.AnchorOutputsZeroFeeHtlcTx, Features(DualFunding -> Optional, Wumbo -> Optional), Features(DualFunding -> Optional, Wumbo -> Optional), Set(StaticRemoteKey, AnchorOutputsZeroFeeHtlcTx, Wumbo, DualFunding)),
     )
-    testCases.foreach(t => assert(ChannelFeatures(t.channelType, t.localFeatures, t.remoteFeatures).features === t.expected))
+    testCases.foreach(t => assert(ChannelFeatures(t.channelType, t.localFeatures, t.remoteFeatures).features === t.expected, s"channelType=${t.channelType} localFeatures=${t.localFeatures} remoteFeatures=${t.remoteFeatures}"))
   }
 
   test("channel types and optional permanent channel features don't overlap") {
