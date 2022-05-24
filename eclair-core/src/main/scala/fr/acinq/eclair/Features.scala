@@ -56,6 +56,12 @@ trait InitFeature extends Feature
 trait NodeFeature extends Feature
 /** Feature that should be advertised in invoices. */
 trait InvoiceFeature extends Feature
+/**
+ * Feature negotiated when opening a channel that are *not* part of the channel type, but will apply for all of the
+ * channel's lifetime. This doesn't include features that can be safely activated/deactivated without impacting the
+ * channel's operation such as option_dataloss_protect or option_shutdown_anysegwit.
+ */
+trait PermanentOptionalChannelFeature extends InitFeature // <- not in the spec
 // @formatter:on
 
 case class UnknownFeature(bitIndex: Int)
@@ -158,7 +164,7 @@ object Features {
     val mandatory = 2
   }
 
-  case object UpfrontShutdownScript extends Feature with InitFeature with NodeFeature {
+  case object UpfrontShutdownScript extends Feature with InitFeature with NodeFeature with PermanentOptionalChannelFeature {
     val rfcName = "option_upfront_shutdown_script"
     val mandatory = 4
   }
@@ -193,7 +199,7 @@ object Features {
     val mandatory = 16
   }
 
-  case object Wumbo extends Feature with InitFeature with NodeFeature {
+  case object Wumbo extends Feature with InitFeature with NodeFeature with PermanentOptionalChannelFeature {
     val rfcName = "option_support_large_channel"
     val mandatory = 18
   }
@@ -213,7 +219,7 @@ object Features {
     val mandatory = 26
   }
 
-  case object DualFunding extends Feature with InitFeature with NodeFeature {
+  case object DualFunding extends Feature with InitFeature with NodeFeature with PermanentOptionalChannelFeature {
     val rfcName = "option_dual_fund"
     val mandatory = 28
   }

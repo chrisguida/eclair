@@ -17,7 +17,7 @@
 package fr.acinq.eclair.channel
 
 import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, DefaultCommitmentFormat, UnsafeLegacyAnchorOutputsCommitmentFormat, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat}
-import fr.acinq.eclair.{FeatureSupport, Features, InitFeature, Feature}
+import fr.acinq.eclair.{Feature, FeatureSupport, Features, InitFeature, PermanentOptionalChannelFeature}
 
 /**
  * Created by t-bast on 24/06/2021.
@@ -57,10 +57,8 @@ object ChannelFeatures {
 
   /** Enrich the channel type with other permanent features that will be applied to the channel. */
   def apply(channelType: ChannelType, localFeatures: Features[InitFeature], remoteFeatures: Features[InitFeature]): ChannelFeatures = {
-    // NB: we don't include features that can be safely activated/deactivated without impacting the channel's operation,
-    // such as option_dataloss_protect or option_shutdown_anysegwit.
-    val availableFeatures = Seq(Features.Wumbo, Features.UpfrontShutdownScript).filter(f => Features.canUseFeature(localFeatures, remoteFeatures, f))
-    val allFeatures = channelType.features.toSeq ++ availableFeatures
+    val optionalFeatures = Features.knownFeatures.collect { case f: PermanentOptionalChannelFeature if Features.canUseFeature(localFeatures, remoteFeatures, f) => f }
+    val allFeatures = channelType.features.toSeq ++ optionalFeatures
     ChannelFeatures(allFeatures: _*)
   }
 

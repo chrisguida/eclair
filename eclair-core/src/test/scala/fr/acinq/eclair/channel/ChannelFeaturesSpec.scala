@@ -20,7 +20,7 @@ import fr.acinq.eclair.FeatureSupport._
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.channel.states.ChannelStateTestsHelperMethods
 import fr.acinq.eclair.transactions.Transactions
-import fr.acinq.eclair.{Features, InitFeature, NodeFeature, TestKitBaseClass}
+import fr.acinq.eclair.{Feature, Features, InitFeature, PermanentOptionalChannelFeature, TestKitBaseClass}
 import org.scalatest.funsuite.AnyFunSuiteLike
 
 class ChannelFeaturesSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStateTestsHelperMethods {
@@ -111,16 +111,46 @@ class ChannelFeaturesSpec extends TestKitBaseClass with AnyFunSuiteLike with Cha
     }
   }
 
-  test("enrich channel type with other permanent channel features") {
-    assert(ChannelFeatures(ChannelTypes.Standard, Features[InitFeature](Wumbo -> Optional), Features.empty[InitFeature]).features.isEmpty)
-    assert(ChannelFeatures(ChannelTypes.Standard, Features[InitFeature](Wumbo -> Optional), Features[InitFeature](Wumbo -> Optional)).features === Set(Wumbo))
-    assert(ChannelFeatures(ChannelTypes.Standard, Features[InitFeature](Wumbo -> Mandatory), Features[InitFeature](Wumbo -> Optional)).features === Set(Wumbo))
-    assert(ChannelFeatures(ChannelTypes.StaticRemoteKey, Features[InitFeature](Wumbo -> Optional), Features.empty[InitFeature]).features === Set(StaticRemoteKey))
-    assert(ChannelFeatures(ChannelTypes.StaticRemoteKey, Features[InitFeature](Wumbo -> Optional), Features[InitFeature](Wumbo -> Optional)).features === Set(StaticRemoteKey, Wumbo))
-    assert(ChannelFeatures(ChannelTypes.AnchorOutputs, Features.empty[InitFeature], Features[InitFeature](Wumbo -> Optional)).features === Set(StaticRemoteKey, AnchorOutputs))
-    assert(ChannelFeatures(ChannelTypes.AnchorOutputs, Features[InitFeature](Wumbo -> Optional), Features[InitFeature](Wumbo -> Mandatory)).features === Set(StaticRemoteKey, AnchorOutputs, Wumbo))
-    assert(ChannelFeatures(ChannelTypes.AnchorOutputsZeroFeeHtlcTx, Features.empty[InitFeature], Features[InitFeature](Wumbo -> Optional)).features === Set(StaticRemoteKey, AnchorOutputsZeroFeeHtlcTx))
-    assert(ChannelFeatures(ChannelTypes.AnchorOutputsZeroFeeHtlcTx, Features[InitFeature](Wumbo -> Optional), Features[InitFeature](Wumbo -> Mandatory)).features === Set(StaticRemoteKey, AnchorOutputsZeroFeeHtlcTx, Wumbo))
+  test("enrich channel type with optional permanent channel features") {
+    case class TestCase(channelType: SupportedChannelType, localFeatures: Features[InitFeature], remoteFeatures: Features[InitFeature], expected: Set[Feature])
+    val testCases = Seq(
+      TestCase(ChannelTypes.Standard, Features(Wumbo -> Optional), Features.empty, Set.empty),
+      TestCase(ChannelTypes.Standard, Features(Wumbo -> Optional), Features(Wumbo -> Optional), Set(Wumbo)),
+      TestCase(ChannelTypes.Standard, Features(Wumbo -> Mandatory), Features(Wumbo -> Optional), Set(Wumbo)),
+      TestCase(ChannelTypes.StaticRemoteKey, Features(Wumbo -> Optional), Features.empty, Set(StaticRemoteKey)),
+      TestCase(ChannelTypes.StaticRemoteKey, Features(Wumbo -> Optional), Features(Wumbo -> Optional), Set(StaticRemoteKey, Wumbo)),
+      TestCase(ChannelTypes.AnchorOutputs, Features.empty, Features(Wumbo -> Optional), Set(StaticRemoteKey, AnchorOutputs)),
+      TestCase(ChannelTypes.AnchorOutputs, Features(Wumbo -> Optional), Features(Wumbo -> Mandatory), Set(StaticRemoteKey, AnchorOutputs, Wumbo)),
+      TestCase(ChannelTypes.AnchorOutputsZeroFeeHtlcTx, Features.empty, Features(Wumbo -> Optional), Set(StaticRemoteKey, AnchorOutputsZeroFeeHtlcTx)),
+      TestCase(ChannelTypes.AnchorOutputsZeroFeeHtlcTx, Features(Wumbo -> Optional), Features(Wumbo -> Mandatory), Set(StaticRemoteKey, AnchorOutputsZeroFeeHtlcTx, Wumbo)),
+      TestCase(ChannelTypes.AnchorOutputsZeroFeeHtlcTx, Features(DualFunding -> Optional, Wumbo -> Optional), Features(DualFunding -> Optional, Wumbo -> Optional), Set(StaticRemoteKey, AnchorOutputsZeroFeeHtlcTx, Wumbo, DualFunding)),
+    )
+    testCases.foreach(t => assert(ChannelFeatures(t.channelType, t.localFeatures, t.remoteFeatures).features === t.expected))
+  }
+
+  test("channel types and optional permanent channel features don't overlap") {
+    import scala.reflect.ClassTag
+    import scala.reflect.runtime.universe._
+    import scala.reflect.runtime.{universe => runtime}
+    val mirror = runtime.runtimeMirror(ClassLoader.getSystemClassLoader)
+
+    def extract[T: TypeTag](container: T)(implicit c: ClassTag[T]): Set[SupportedChannelType] = {
+      typeOf[T].decls.filter(_.isPublic).flatMap(symbol => {
+        if (symbol.isTerm && symbol.isModule) {
+          mirror.reflectModule(symbol.asModule).instance match {
+            case f: SupportedChannelType => Some(f)
+            case _ => None
+          }
+        } else {
+          None
+        }
+      }).toSet
+    }
+
+    val channelTypes = extract(ChannelTypes)
+    assert(channelTypes.nonEmpty)
+    val channelTypeFeatures = channelTypes.flatMap(_.features)
+    channelTypeFeatures.foreach(f => assert(!f.isInstanceOf[PermanentOptionalChannelFeature]))
   }
 
 }
