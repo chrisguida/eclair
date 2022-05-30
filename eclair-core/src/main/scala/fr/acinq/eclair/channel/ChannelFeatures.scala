@@ -17,7 +17,7 @@
 package fr.acinq.eclair.channel
 
 import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, DefaultCommitmentFormat, UnsafeLegacyAnchorOutputsCommitmentFormat, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat}
-import fr.acinq.eclair.{Feature, FeatureSupport, Features, InitFeature, PermanentOptionalChannelFeature}
+import fr.acinq.eclair.{ChannelTypeFeature, Feature, FeatureSupport, Features, InitFeature, PermanentChannelFeature}
 
 /**
  * Created by t-bast on 24/06/2021.
@@ -57,9 +57,15 @@ object ChannelFeatures {
 
   /** Enrich the channel type with other permanent features that will be applied to the channel. */
   def apply(channelType: ChannelType, localFeatures: Features[InitFeature], remoteFeatures: Features[InitFeature]): ChannelFeatures = {
-    val optionalFeatures = Features.knownFeatures.collect { case f: PermanentOptionalChannelFeature if Features.canUseFeature(localFeatures, remoteFeatures, f) => f }
-    val allFeatures = channelType.features.toSeq ++ optionalFeatures
-    ChannelFeatures(allFeatures: _*)
+    val otherPermanentFeatures = Features.knownFeatures
+      .collect {
+        case _: ChannelTypeFeature => None // channel-type features are negotiated in the channel-type, we ignore them in the init
+        case f: PermanentChannelFeature if Features.canUseFeature(localFeatures, remoteFeatures, f) => Some(f) // we only consider permanent channel features
+      }
+      .flatten
+
+    val allPermanentFeatures = channelType.features.toSeq ++ otherPermanentFeatures
+    ChannelFeatures(allPermanentFeatures: _*)
   }
 
 }
@@ -67,10 +73,13 @@ object ChannelFeatures {
 /** A channel type is a specific set of even feature bits that represent persistent channel features as defined in Bolt 2. */
 sealed trait ChannelType {
   /** Features representing that channel type. */
-  def features: Set[InitFeature]
+  def features: Set[_ <: InitFeature]
 }
 
 sealed trait SupportedChannelType extends ChannelType {
+  /** Known channel-type features */
+  override def features: Set[ChannelTypeFeature]
+
   /** True if our main output in the remote commitment is directly sent (without any delay) to one of our wallet addresses. */
   def paysDirectlyToWallet: Boolean
 
@@ -82,25 +91,25 @@ object ChannelTypes {
 
   // @formatter:off
   case object Standard extends SupportedChannelType {
-    override def features: Set[InitFeature] = Set.empty
+    override def features: Set[ChannelTypeFeature] = Set.empty
     override def paysDirectlyToWallet: Boolean = false
     override def commitmentFormat: CommitmentFormat = DefaultCommitmentFormat
     override def toString: String = "standard"
   }
   case object StaticRemoteKey extends SupportedChannelType {
-    override def features: Set[InitFeature] = Set(Features.StaticRemoteKey)
+    override def features: Set[ChannelTypeFeature] = Set(Features.StaticRemoteKey)
     override def paysDirectlyToWallet: Boolean = true
     override def commitmentFormat: CommitmentFormat = DefaultCommitmentFormat
     override def toString: String = "static_remotekey"
   }
   case object AnchorOutputs extends SupportedChannelType {
-    override def features: Set[InitFeature] = Set(Features.StaticRemoteKey, Features.AnchorOutputs)
+    override def features: Set[ChannelTypeFeature] = Set(Features.StaticRemoteKey, Features.AnchorOutputs)
     override def paysDirectlyToWallet: Boolean = false
     override def commitmentFormat: CommitmentFormat = UnsafeLegacyAnchorOutputsCommitmentFormat
     override def toString: String = "anchor_outputs"
   }
   case object AnchorOutputsZeroFeeHtlcTx extends SupportedChannelType {
-    override def features: Set[InitFeature] = Set(Features.StaticRemoteKey, Features.AnchorOutputsZeroFeeHtlcTx)
+    override def features: Set[ChannelTypeFeature] = Set(Features.StaticRemoteKey, Features.AnchorOutputsZeroFeeHtlcTx)
     override def paysDirectlyToWallet: Boolean = false
     override def commitmentFormat: CommitmentFormat = ZeroFeeHtlcTxAnchorOutputsCommitmentFormat
     override def toString: String = "anchor_outputs_zero_fee_htlc_tx"
@@ -111,8 +120,8 @@ object ChannelTypes {
   }
   // @formatter:on
 
-  private val features2ChannelType: Map[Features[InitFeature], SupportedChannelType] = Set(Standard, StaticRemoteKey, AnchorOutputs, AnchorOutputsZeroFeeHtlcTx)
-    .map(channelType => Features[InitFeature](channelType.features.map(_ -> FeatureSupport.Mandatory).toMap) -> channelType)
+  private val features2ChannelType: Map[Features[_ <: InitFeature], SupportedChannelType] = Set(Standard, StaticRemoteKey, AnchorOutputs, AnchorOutputsZeroFeeHtlcTx)
+    .map(channelType => Features(channelType.features.map(_ -> FeatureSupport.Mandatory).toMap) -> channelType)
     .toMap
 
   // NB: Bolt 2: features must exactly match in order to identify a channel type.

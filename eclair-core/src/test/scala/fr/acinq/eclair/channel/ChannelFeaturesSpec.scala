@@ -20,7 +20,7 @@ import fr.acinq.eclair.FeatureSupport._
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.channel.states.ChannelStateTestsHelperMethods
 import fr.acinq.eclair.transactions.Transactions
-import fr.acinq.eclair.{Feature, Features, InitFeature, PermanentOptionalChannelFeature, TestKitBaseClass}
+import fr.acinq.eclair.{Feature, Features, InitFeature, TestKitBaseClass}
 import org.scalatest.funsuite.AnyFunSuiteLike
 
 class ChannelFeaturesSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStateTestsHelperMethods {
@@ -127,31 +127,6 @@ class ChannelFeaturesSpec extends TestKitBaseClass with AnyFunSuiteLike with Cha
       TestCase(ChannelTypes.StaticRemoteKey, Features(AnchorOutputsZeroFeeHtlcTx -> Optional, Wumbo -> Optional), Features(AnchorOutputsZeroFeeHtlcTx -> Optional, Wumbo -> Optional), Set(StaticRemoteKey, Wumbo)),
     )
     testCases.foreach(t => assert(ChannelFeatures(t.channelType, t.localFeatures, t.remoteFeatures).features === t.expected, s"channelType=${t.channelType} localFeatures=${t.localFeatures} remoteFeatures=${t.remoteFeatures}"))
-  }
-
-  test("channel types and optional permanent channel features don't overlap") {
-    import scala.reflect.ClassTag
-    import scala.reflect.runtime.universe._
-    import scala.reflect.runtime.{universe => runtime}
-    val mirror = runtime.runtimeMirror(ClassLoader.getSystemClassLoader)
-
-    def extract[T: TypeTag](container: T)(implicit c: ClassTag[T]): Set[SupportedChannelType] = {
-      typeOf[T].decls.filter(_.isPublic).flatMap(symbol => {
-        if (symbol.isTerm && symbol.isModule) {
-          mirror.reflectModule(symbol.asModule).instance match {
-            case f: SupportedChannelType => Some(f)
-            case _ => None
-          }
-        } else {
-          None
-        }
-      }).toSet
-    }
-
-    val channelTypes = extract(ChannelTypes)
-    assert(channelTypes.nonEmpty)
-    val channelTypeFeatures = channelTypes.flatMap(_.features)
-    channelTypeFeatures.foreach(f => assert(!f.isInstanceOf[PermanentOptionalChannelFeature]))
   }
 
 }

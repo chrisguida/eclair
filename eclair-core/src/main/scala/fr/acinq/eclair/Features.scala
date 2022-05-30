@@ -57,11 +57,15 @@ trait NodeFeature extends Feature
 /** Feature that should be advertised in invoices. */
 trait InvoiceFeature extends Feature
 /**
- * Feature negotiated when opening a channel that are *not* part of the channel type, but will apply for all of the
- * channel's lifetime. This doesn't include features that can be safely activated/deactivated without impacting the
- * channel's operation such as option_dataloss_protect or option_shutdown_anysegwit.
+ * Feature negotiated when opening a channel that will apply for all of the channel's lifetime.
  */
-trait PermanentOptionalChannelFeature extends InitFeature // <- not in the spec
+trait PermanentChannelFeature extends InitFeature // <- not in the spec
+/**
+ * Permanent channel feature negotiated in the channel type. Those features take precedence over permanent channel
+ * features negotiated in init messages. For example, if the channel type is option_static_remotekey, then even if
+ * feature option_anchor_outputs is supported by both peers, it won't apply to the channel.
+ */
+trait ChannelTypeFeature extends PermanentChannelFeature // <- not in the spec
 // @formatter:on
 
 case class UnknownFeature(bitIndex: Int)
@@ -153,7 +157,7 @@ object Features {
 
   def fromConfiguration(config: Config): Features[Feature] = fromConfiguration[Feature](config, knownFeatures)
 
-  case object DataLossProtect extends Feature with InitFeature with NodeFeature {
+  case object DataLossProtect extends Feature with InitFeature with NodeFeature with PermanentChannelFeature {
     val rfcName = "option_data_loss_protect"
     val mandatory = 0
   }
@@ -164,7 +168,7 @@ object Features {
     val mandatory = 2
   }
 
-  case object UpfrontShutdownScript extends Feature with InitFeature with NodeFeature with PermanentOptionalChannelFeature {
+  case object UpfrontShutdownScript extends Feature with InitFeature with NodeFeature with PermanentChannelFeature {
     val rfcName = "option_upfront_shutdown_script"
     val mandatory = 4
   }
@@ -184,7 +188,7 @@ object Features {
     val mandatory = 10
   }
 
-  case object StaticRemoteKey extends Feature with InitFeature with NodeFeature {
+  case object StaticRemoteKey extends Feature with InitFeature with NodeFeature with ChannelTypeFeature {
     val rfcName = "option_static_remotekey"
     val mandatory = 12
   }
@@ -199,17 +203,17 @@ object Features {
     val mandatory = 16
   }
 
-  case object Wumbo extends Feature with InitFeature with NodeFeature with PermanentOptionalChannelFeature {
+  case object Wumbo extends Feature with InitFeature with NodeFeature with PermanentChannelFeature {
     val rfcName = "option_support_large_channel"
     val mandatory = 18
   }
 
-  case object AnchorOutputs extends Feature with InitFeature with NodeFeature {
+  case object AnchorOutputs extends Feature with InitFeature with NodeFeature with ChannelTypeFeature {
     val rfcName = "option_anchor_outputs"
     val mandatory = 20
   }
 
-  case object AnchorOutputsZeroFeeHtlcTx extends Feature with InitFeature with NodeFeature {
+  case object AnchorOutputsZeroFeeHtlcTx extends Feature with InitFeature with NodeFeature with ChannelTypeFeature {
     val rfcName = "option_anchors_zero_fee_htlc_tx"
     val mandatory = 22
   }
@@ -219,7 +223,7 @@ object Features {
     val mandatory = 26
   }
 
-  case object DualFunding extends Feature with InitFeature with NodeFeature with PermanentOptionalChannelFeature {
+  case object DualFunding extends Feature with InitFeature with NodeFeature with PermanentChannelFeature {
     val rfcName = "option_dual_fund"
     val mandatory = 28
   }
