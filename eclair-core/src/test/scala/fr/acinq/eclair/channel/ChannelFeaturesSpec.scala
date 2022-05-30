@@ -124,6 +124,7 @@ class ChannelFeaturesSpec extends TestKitBaseClass with AnyFunSuiteLike with Cha
       TestCase(ChannelTypes.AnchorOutputsZeroFeeHtlcTx, Features.empty, Features(Wumbo -> Optional), Set(StaticRemoteKey, AnchorOutputsZeroFeeHtlcTx)),
       TestCase(ChannelTypes.AnchorOutputsZeroFeeHtlcTx, Features(Wumbo -> Optional), Features(Wumbo -> Mandatory), Set(StaticRemoteKey, AnchorOutputsZeroFeeHtlcTx, Wumbo)),
       TestCase(ChannelTypes.AnchorOutputsZeroFeeHtlcTx, Features(DualFunding -> Optional, Wumbo -> Optional), Features(DualFunding -> Optional, Wumbo -> Optional), Set(StaticRemoteKey, AnchorOutputsZeroFeeHtlcTx, Wumbo, DualFunding)),
+      TestCase(ChannelTypes.StaticRemoteKey, Features(AnchorOutputsZeroFeeHtlcTx -> Optional, Wumbo -> Optional), Features(AnchorOutputsZeroFeeHtlcTx -> Optional, Wumbo -> Optional), Set(StaticRemoteKey, Wumbo)),
     )
     testCases.foreach(t => assert(ChannelFeatures(t.channelType, t.localFeatures, t.remoteFeatures).features === t.expected, s"channelType=${t.channelType} localFeatures=${t.localFeatures} remoteFeatures=${t.remoteFeatures}"))
   }
