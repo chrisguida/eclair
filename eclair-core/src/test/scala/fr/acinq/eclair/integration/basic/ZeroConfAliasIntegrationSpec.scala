@@ -101,7 +101,9 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
     if (bcPublic && deepConfirm) {
       // if channel b-c is public, we wait for alice to learn about it
       eventually {
-        assert(getRouterData(alice).channels.size == 2)
+        val data = getRouterData(alice)
+        assert(data.channels.size == 2)
+        assert(data.channels.values.forall(pc => pc.update_1_opt.isDefined && pc.update_2_opt.isDefined))
       }
     }
 
