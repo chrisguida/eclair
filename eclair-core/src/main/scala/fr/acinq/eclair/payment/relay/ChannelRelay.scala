@@ -262,14 +262,12 @@ class ChannelRelay private(nodeParams: NodeParams,
         RelayFailure(CMD_FAIL_HTLC(add.id, Right(UnknownNextPeer), commit = true))
       case Some(c) if !c.channelUpdate.channelFlags.isEnabled =>
         RelayFailure(CMD_FAIL_HTLC(add.id, Right(ChannelDisabled(c.channelUpdate.messageFlags, c.channelUpdate.channelFlags, c.channelUpdate)), commit = true))
-      case Some(c) if payload.amountToForward < c.channelUpdate.htlcMinimumMsat =>
-        RelayFailure(CMD_FAIL_HTLC(add.id, Right(AmountBelowMinimum(payload.amountToForward, c.channelUpdate)), commit = true))
       case Some(c) if r.expiryDelta < c.channelUpdate.cltvExpiryDelta =>
         RelayFailure(CMD_FAIL_HTLC(add.id, Right(IncorrectCltvExpiry(payload.outgoingCltv, c.channelUpdate)), commit = true))
-      case Some(c) if r.relayFeeMsat < nodeFee(c.channelUpdate.relayFees, payload.amountToForward) &&
+      case Some(c) if r.relayFeeMsat < nodeFee(c.channelUpdate.relayFees, payload.amountToForward max c.channelUpdate.htlcMinimumMsat) &&
         // fees also do not satisfy the previous channel update for `enforcementDelay` seconds after current update
         (TimestampSecond.now() - c.channelUpdate.timestamp > nodeParams.relayParams.enforcementDelay ||
-          outgoingChannel_opt.flatMap(_.prevChannelUpdate).forall(c => r.relayFeeMsat < nodeFee(c.relayFees, payload.amountToForward))) =>
+          outgoingChannel_opt.flatMap(_.prevChannelUpdate).forall(c => r.relayFeeMsat < nodeFee(c.relayFees, payload.amountToForward max c.htlcMinimumMsat))) =>
         RelayFailure(CMD_FAIL_HTLC(add.id, Right(FeeInsufficient(add.amountMsat, c.channelUpdate)), commit = true))
       case Some(c) =>
         val origin = Origin.ChannelRelayedHot(addResponseAdapter.toClassic, add, payload.amountToForward)

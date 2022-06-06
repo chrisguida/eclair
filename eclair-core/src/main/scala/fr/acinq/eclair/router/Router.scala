@@ -408,7 +408,10 @@ object Router {
   sealed trait ChannelRelayParams {
     def cltvExpiryDelta: CltvExpiryDelta
     def relayFees: Relayer.RelayFees
-    final def fee(amount: MilliSatoshi): MilliSatoshi = nodeFee(relayFees, amount)
+    final def fee(amount: MilliSatoshi): MilliSatoshi = {
+      val amountToForward = htlcMinimum max amount
+      amountToForward - amount + nodeFee(relayFees, amountToForward)
+    }
     def htlcMinimum: MilliSatoshi
     def htlcMaximum_opt: Option[MilliSatoshi]
   }

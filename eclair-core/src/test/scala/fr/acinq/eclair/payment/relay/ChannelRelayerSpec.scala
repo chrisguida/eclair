@@ -185,17 +185,17 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, Right(ChannelDisabled(u.channelUpdate.messageFlags, u.channelUpdate.channelFlags, u.channelUpdate)), commit = true))
   }
 
-  test("fail to relay an htlc-add (amount below minimum)") { f =>
+  test("fail to relay an htlc-add (amount below minimum and fees not enough to compensate)") { f =>
     import f._
 
     val payload = RelayLegacyPayload(shortId1, outgoingAmount, outgoingExpiry)
-    val r = createValidIncomingPacket(1100000 msat, CltvExpiry(400100), payload)
-    val u = createLocalUpdate(shortId1, htlcMinimum = outgoingAmount + 1.msat)
+    val r = createValidIncomingPacket(1001100 msat, CltvExpiry(400100), payload)
+    val u = createLocalUpdate(shortId1, htlcMinimum = outgoingAmount + outgoingAmount)
 
     channelRelayer ! WrappedLocalChannelUpdate(u)
     channelRelayer ! Relay(r)
 
-    expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, Right(AmountBelowMinimum(outgoingAmount, u.channelUpdate)), commit = true))
+    expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, Right(FeeInsufficient(1001100 msat, u.channelUpdate)), commit = true))
   }
 
   test("relay an htlc-add (expiry larger than our requirements)") { f =>

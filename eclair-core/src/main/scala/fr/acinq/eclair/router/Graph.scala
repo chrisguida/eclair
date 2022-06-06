@@ -249,7 +249,6 @@ object Graph {
           if (current.weight.amount <= edge.capacity &&
             edge.balance_opt.forall(current.weight.amount <= _) &&
             edge.params.htlcMaximum_opt.forall(current.weight.amount <= _) &&
-            current.weight.amount >= edge.params.htlcMinimum &&
             !ignoredEdges.contains(edge.desc) &&
             !ignoredVertices.contains(neighbor)) {
             // NB: this contains the amount (including fees) that will need to be sent to `neighbor`, but the amount that
